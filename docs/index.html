@@ -664,7 +664,9 @@
   <script>
     async function loadReleases() {
       try {
-        const response = await fetch('releases.json');
+        // Add cache busting to always fetch latest releases.json
+        const cacheBuster = new Date().getTime();
+        const response = await fetch(`releases.json?v=${cacheBuster}`);
         const data = await response.json();
         renderReleases(data);
       } catch (error) {
