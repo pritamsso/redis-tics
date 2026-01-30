@@ -191,3 +191,170 @@ export interface AdvancedAnalytics {
   errorStats: ErrorStat[];
   latencyDoctor?: string;
 }
+
+export interface KeyInfo {
+  key: string;
+  keyType: string;
+  ttl: number;
+  size?: number;
+  encoding?: string;
+}
+
+export interface ZSetMember {
+  member: string;
+  score: number;
+}
+
+export interface StreamEntry {
+  id: string;
+  fields: Record<string, string>;
+}
+
+export type KeyValueData =
+  | { String: string }
+  | { List: string[] }
+  | { Set: string[] }
+  | { ZSet: ZSetMember[] }
+  | { Hash: Record<string, string> }
+  | { Stream: StreamEntry[] }
+  | { Unknown: string };
+
+export interface KeyValue {
+  key: string;
+  keyType: string;
+  ttl: number;
+  value: KeyValueData;
+  size?: number;
+}
+
+export interface KeyScanResult {
+  keys: KeyInfo[];
+  cursor: string;
+  hasMore: boolean;
+  totalScanned: number;
+}
+
+export interface ServerCapabilities {
+  serverType: string;
+  version: string;
+  clusterEnabled: boolean;
+  clusterMode: string;
+  supportsMemoryCommands: boolean;
+  supportsLatencyCommands: boolean;
+  supportsModuleCommands: boolean;
+  isReadReplica: boolean;
+  maxClients: number;
+  totalKeys: number;
+}
+
+export interface PerformanceWarning {
+  level: string;
+  message: string;
+  command: string;
+  estimatedImpact: string;
+}
+
+export interface CommandResult {
+  success: boolean;
+  result: string;
+  executionTimeMs: number;
+  error?: string;
+}
+
+export interface BulkDeleteResult {
+  deletedCount: number;
+  failedCount: number;
+  executionTimeMs: number;
+  errors: string[];
+}
+
+export interface TypeDistribution {
+  keyType: string;
+  count: number;
+  percentage: number;
+}
+
+export interface TypeMemory {
+  keyType: string;
+  memoryBytes: number;
+  percentage: number;
+}
+
+export interface ExpiryAnalysis {
+  keysWithTtl: number;
+  keysWithoutTtl: number;
+  expiringIn1h: number;
+  expiringIn24h: number;
+  expiringIn7d: number;
+  memoryToFree1h: number;
+  memoryToFree24h: number;
+}
+
+export interface KeyMemoryInfo {
+  key: string;
+  keyType: string;
+  memoryBytes: number;
+  ttl: number;
+}
+
+export interface NamespaceInfo {
+  namespace: string;
+  keyCount: number;
+  memoryBytes: number;
+}
+
+export interface DatabaseAnalysis {
+  totalKeys: number;
+  totalMemory: number;
+  typeDistribution: TypeDistribution[];
+  memoryByType: TypeMemory[];
+  expiryAnalysis: ExpiryAnalysis;
+  topKeysByMemory: KeyMemoryInfo[];
+  namespaces: NamespaceInfo[];
+  recommendations: string[];
+}
+
+export interface IdleClient {
+  id: string;
+  addr: string;
+  idleSeconds: number;
+  lastCommand: string;
+  connectedSeconds: number;
+}
+
+export interface ClientMemoryInfo {
+  id: string;
+  addr: string;
+  outputBufferBytes: number;
+  queryBufferBytes: number;
+}
+
+export interface CommandClientInfo {
+  command: string;
+  clientCount: number;
+  clientIps: string[];
+}
+
+export interface SuspiciousPattern {
+  patternType: string;
+  severity: string;
+  description: string;
+  affectedClients: string[];
+  recommendation: string;
+}
+
+export interface ClientAnomaly {
+  anomalyType: string;
+  clientAddr: string;
+  details: string;
+  severity: string;
+}
+
+export interface ClientAnalysis {
+  totalClients: number;
+  idleClients: IdleClient[];
+  highMemoryClients: ClientMemoryInfo[];
+  clientsByCommand: CommandClientInfo[];
+  suspiciousPatterns: SuspiciousPattern[];
+  anomalies: ClientAnomaly[];
+}

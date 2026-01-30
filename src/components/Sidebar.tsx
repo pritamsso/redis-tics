@@ -28,14 +28,22 @@ export function Sidebar({
 }: SidebarProps) {
   return (
     <div className="w-64 border-r bg-card flex flex-col h-full">
-      <div className="p-4 border-b flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Database className="h-5 w-5 text-[hsl(var(--redis))]" />
-          <span className="font-semibold">Redis Servers</span>
+      <div className="p-4 border-b">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center shadow-lg">
+            <Database className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h1 className="font-bold text-lg leading-tight">Redis Tics</h1>
+            <p className="text-xs text-muted-foreground">Monitor & Manage</p>
+          </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={onAddServer}>
-          <Plus className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-muted-foreground">Servers</span>
+          <Button variant="ghost" size="icon" onClick={onAddServer} className="h-7 w-7">
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <ScrollArea className="flex-1 p-2">
@@ -134,15 +142,25 @@ export function Sidebar({
               @pritamsso
             </a>
           </p>
-          <a 
-            href="https://github.com/pritamsso/redis-tics" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Github className="h-3 w-3" />
-            View on GitHub
-          </a>
+          <div className="flex items-center justify-center gap-3">
+            <a 
+              href="https://redistics.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              🌐 redistics.com
+            </a>
+            <a 
+              href="https://github.com/pritamsso/redis-tics" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Github className="h-3 w-3" />
+              GitHub
+            </a>
+          </div>
         </div>
       </div>
     </div>

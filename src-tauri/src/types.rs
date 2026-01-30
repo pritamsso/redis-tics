@@ -233,3 +233,236 @@ pub struct AdvancedAnalytics {
     pub error_stats: Vec<ErrorStat>,
     pub latency_doctor: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyInfo {
+    pub key: String,
+    pub key_type: String,
+    pub ttl: i64,
+    pub size: Option<u64>,
+    pub encoding: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyValue {
+    pub key: String,
+    pub key_type: String,
+    pub ttl: i64,
+    pub value: KeyValueData,
+    pub size: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum KeyValueData {
+    String(String),
+    List(Vec<String>),
+    Set(Vec<String>),
+    ZSet(Vec<ZSetMember>),
+    Hash(HashMap<String, String>),
+    Stream(Vec<StreamEntry>),
+    Unknown(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ZSetMember {
+    pub member: String,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamEntry {
+    pub id: String,
+    pub fields: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyScanResult {
+    pub keys: Vec<KeyInfo>,
+    pub cursor: String,
+    pub has_more: bool,
+    pub total_scanned: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerCapabilities {
+    pub server_type: String,
+    pub version: String,
+    pub cluster_enabled: bool,
+    pub cluster_mode: String,
+    pub supports_memory_commands: bool,
+    pub supports_latency_commands: bool,
+    pub supports_module_commands: bool,
+    pub is_read_replica: bool,
+    pub max_clients: u64,
+    pub total_keys: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceWarning {
+    pub level: String,
+    pub message: String,
+    pub command: String,
+    pub estimated_impact: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandResult {
+    pub success: bool,
+    pub result: String,
+    pub execution_time_ms: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkDeleteResult {
+    pub deleted_count: u64,
+    pub failed_count: u64,
+    pub execution_time_ms: u64,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseAnalysis {
+    pub total_keys: u64,
+    pub total_memory: u64,
+    pub type_distribution: Vec<TypeDistribution>,
+    pub memory_by_type: Vec<TypeMemory>,
+    pub expiry_analysis: ExpiryAnalysis,
+    pub top_keys_by_memory: Vec<KeyMemoryInfo>,
+    pub namespaces: Vec<NamespaceInfo>,
+    pub recommendations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeDistribution {
+    pub key_type: String,
+    pub count: u64,
+    pub percentage: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeMemory {
+    pub key_type: String,
+    pub memory_bytes: u64,
+    pub percentage: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExpiryAnalysis {
+    pub keys_with_ttl: u64,
+    pub keys_without_ttl: u64,
+    pub expiring_in_1h: u64,
+    pub expiring_in_24h: u64,
+    pub expiring_in_7d: u64,
+    pub memory_to_free_1h: u64,
+    pub memory_to_free_24h: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyMemoryInfo {
+    pub key: String,
+    pub key_type: String,
+    pub memory_bytes: u64,
+    pub ttl: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NamespaceInfo {
+    pub namespace: String,
+    pub key_count: u64,
+    pub memory_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientAnalysis {
+    pub total_clients: u64,
+    pub idle_clients: Vec<IdleClient>,
+    pub high_memory_clients: Vec<ClientMemoryInfo>,
+    pub clients_by_command: Vec<CommandClientInfo>,
+    pub suspicious_patterns: Vec<SuspiciousPattern>,
+    pub anomalies: Vec<ClientAnomaly>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdleClient {
+    pub id: String,
+    pub addr: String,
+    pub idle_seconds: u64,
+    pub last_command: String,
+    pub connected_seconds: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientMemoryInfo {
+    pub id: String,
+    pub addr: String,
+    pub output_buffer_bytes: u64,
+    pub query_buffer_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandClientInfo {
+    pub command: String,
+    pub client_count: u64,
+    pub client_ips: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuspiciousPattern {
+    pub pattern_type: String,
+    pub severity: String,
+    pub description: String,
+    pub affected_clients: Vec<String>,
+    pub recommendation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientAnomaly {
+    pub anomaly_type: String,
+    pub client_addr: String,
+    pub details: String,
+    pub severity: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomAlert {
+    pub id: String,
+    pub name: String,
+    pub condition_type: String,
+    pub threshold: f64,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertTrigger {
+    pub alert_id: String,
+    pub alert_name: String,
+    pub triggered_at: u64,
+    pub current_value: f64,
+    pub threshold: f64,
+    pub message: String,
+}

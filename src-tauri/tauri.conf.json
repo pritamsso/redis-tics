@@ -63,5 +63,15 @@
       }
     }
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZCNTlGMkM4QkE2RjlGMzYKUldRV0JmSjJ4K1VKWHRXMzQ5dHd0UGlXYytKbHR5TGJsVGdLdHdmZXRXbHFRQ2dFdWdleE56WkUK",
+      "endpoints": [
+        "https://github.com/pritamsso/redis-tics/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }
