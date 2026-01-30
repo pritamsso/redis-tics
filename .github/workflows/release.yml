@@ -150,13 +150,39 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get version from Cargo.toml
+      - name: Get and bump version
         id: get_version
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
-            VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+            # Get current version from Cargo.toml
+            CURRENT=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+            
+            # Check if this version tag already exists
+            if git rev-parse "v${CURRENT}" >/dev/null 2>&1; then
+              # Auto-increment patch version
+              MAJOR=$(echo $CURRENT | cut -d. -f1)
+              MINOR=$(echo $CURRENT | cut -d. -f2)
+              PATCH=$(echo $CURRENT | cut -d. -f3)
+              NEW_PATCH=$((PATCH + 1))
+              VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+              echo "Auto-incrementing version from $CURRENT to $VERSION"
+              
+              # Update version in Cargo.toml
+              sed -i.bak "s/^version = \"$CURRENT\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+              rm -f src-tauri/Cargo.toml.bak
+              
+              # Update version in tauri.conf.json
+              sed -i.bak "s/\"version\": \"$CURRENT\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+              rm -f src-tauri/tauri.conf.json.bak
+              
+              # Update version in package.json
+              sed -i.bak "s/\"version\": \"$CURRENT\"/\"version\": \"$VERSION\"/" package.json
+              rm -f package.json.bak
+            else
+              VERSION=$CURRENT
+            fi
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"

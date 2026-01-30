@@ -93,38 +93,50 @@ function App() {
           </div>
         ) : (
           <>
-            <header className="border-b p-4 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <Tabs value={activeTab} onValueChange={setActiveTab}>
-                  <TabsList>
-                    <TabsTrigger value="dashboard" className="gap-1">
-                      <LayoutDashboard className="h-3 w-3" />
-                      Dashboard
-                    </TabsTrigger>
-                    <TabsTrigger value="keys" className="gap-1">
-                      <Key className="h-3 w-3" />
-                      Keys
-                    </TabsTrigger>
-                    <TabsTrigger value="cli" className="gap-1">
-                      <Terminal className="h-3 w-3" />
-                      CLI
-                    </TabsTrigger>
-                    <TabsTrigger value="db-analysis" className="gap-1">
-                      <BarChart3 className="h-3 w-3" />
-                      Analysis
-                    </TabsTrigger>
-                    <TabsTrigger value="clients">Clients</TabsTrigger>
-                    <TabsTrigger value="monitor">Monitor</TabsTrigger>
-                    <TabsTrigger value="info">Server Info</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-2">
-                  <RefreshCw className="h-4 w-4" />
-                  Refresh
-                </Button>
-                <AboutDialog />
+            <header className="border-b bg-card/50 backdrop-blur-sm">
+              <div className="px-6 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-orange-500 rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-md">
+                    RT
+                  </div>
+                  <div className="h-8 w-px bg-border" />
+                  <Tabs value={activeTab} onValueChange={setActiveTab}>
+                    <TabsList className="bg-secondary/50">
+                      <TabsTrigger value="dashboard" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                        <LayoutDashboard className="h-3.5 w-3.5" />
+                        Dashboard
+                      </TabsTrigger>
+                      <TabsTrigger value="keys" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                        <Key className="h-3.5 w-3.5" />
+                        Keys
+                      </TabsTrigger>
+                      <TabsTrigger value="cli" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                        <Terminal className="h-3.5 w-3.5" />
+                        CLI
+                      </TabsTrigger>
+                      <TabsTrigger value="db-analysis" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                        <BarChart3 className="h-3.5 w-3.5" />
+                        Analysis
+                      </TabsTrigger>
+                      <TabsTrigger value="clients" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                        Clients
+                      </TabsTrigger>
+                      <TabsTrigger value="monitor" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                        Monitor
+                      </TabsTrigger>
+                      <TabsTrigger value="info" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                        Info
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-2 hover:bg-secondary">
+                    <RefreshCw className="h-4 w-4" />
+                    Refresh
+                  </Button>
+                  <AboutDialog />
+                </div>
               </div>
             </header>
 
