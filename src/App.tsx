@@ -101,7 +101,7 @@ function App() {
                   </div>
                   <div className="h-8 w-px bg-border" />
                   <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="bg-secondary/80 p-1 gap-1">
+                    <TabsList className="bg-secondary/80 p-1 gap-1 border border-border rounded-lg">
                       <TabsTrigger value="dashboard" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
                         <LayoutDashboard className="h-4 w-4" />
                         Dashboard
@@ -134,7 +134,7 @@ function App() {
                   </Tabs>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-2 hover:bg-secondary">
+                  <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-2 border-border hover:bg-secondary">
                     <RefreshCw className="h-4 w-4" />
                     Refresh
                   </Button>
