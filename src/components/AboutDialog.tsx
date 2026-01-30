@@ -79,9 +79,9 @@ export function AboutDialog() {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground">
-          <div className="w-4 h-4 bg-gradient-to-br from-red-500 to-orange-500 rounded flex items-center justify-center text-[10px]">
-            R
+        <Button variant="outline" size="sm" className="gap-2 border-border hover:bg-secondary">
+          <div className="w-5 h-5 bg-gradient-to-br from-red-500 to-orange-500 rounded flex items-center justify-center text-[8px] font-bold text-white">
+            RT
           </div>
           About
         </Button>

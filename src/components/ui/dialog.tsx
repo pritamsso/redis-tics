@@ -65,9 +65,9 @@ const DialogContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
     if (!context?.open) return null;
 
     return (
-      <div className="fixed inset-0 z-50">
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
         <div className="fixed inset-0 bg-black/80" onClick={() => context.setOpen(false)} />
-        <div className="fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%]">
+        <div className="relative z-50 max-h-[90vh] overflow-y-auto">
           <div
             ref={ref}
             className={cn(

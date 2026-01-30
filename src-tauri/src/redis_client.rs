@@ -395,12 +395,9 @@ impl RedisManager {
             .await
             .map_err(|e| e.to_string())?;
 
-        let mut key_infos = Vec::new();
-        for key in keys.iter().take(100) {
-            if let Ok(info) = self.get_key_info_internal(&mut redis_conn.conn, key).await {
-                key_infos.push(info);
-            }
-        }
+        // Use pipelining to fetch key info in batches - MUCH faster than sequential calls
+        let keys_to_fetch: Vec<&String> = keys.iter().take(100).collect();
+        let key_infos = self.get_key_infos_pipelined(&mut redis_conn.conn, &keys_to_fetch).await?;
 
         Ok(KeyScanResult {
             keys: key_infos,
@@ -410,66 +407,81 @@ impl RedisManager {
         })
     }
 
-    async fn get_key_info_internal(&self, conn: &mut MultiplexedConnection, key: &str) -> Result<KeyInfo, String> {
-        let key_type: String = redis::cmd("TYPE")
-            .arg(key)
+    // Fetch key info for multiple keys using pipelining - single round trip
+    async fn get_key_infos_pipelined(&self, conn: &mut MultiplexedConnection, keys: &[&String]) -> Result<Vec<KeyInfo>, String> {
+        if keys.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Build pipeline for TYPE and TTL only (fast commands)
+        // Skip MEMORY USAGE and OBJECT ENCODING for speed - they're slow
+        let mut pipe = redis::pipe();
+        for key in keys {
+            pipe.cmd("TYPE").arg(*key);
+            pipe.cmd("TTL").arg(*key);
+        }
+
+        let results: Vec<redis::Value> = pipe
             .query_async(conn)
             .await
-            .unwrap_or_else(|_| "unknown".to_string());
+            .map_err(|e| e.to_string())?;
 
-        let ttl: i64 = redis::cmd("TTL")
-            .arg(key)
-            .query_async(conn)
-            .await
-            .unwrap_or(-1);
+        // Parse results - every 2 values is (type, ttl) for one key
+        let mut key_infos = Vec::with_capacity(keys.len());
+        for (i, key) in keys.iter().enumerate() {
+            let type_idx = i * 2;
+            let ttl_idx = i * 2 + 1;
 
-        let size: Option<u64> = redis::cmd("MEMORY")
-            .arg("USAGE")
-            .arg(key)
-            .arg("SAMPLES")
-            .arg(0)
-            .query_async(conn)
-            .await
-            .ok();
+            let key_type = match results.get(type_idx) {
+                Some(redis::Value::SimpleString(s)) => s.clone(),
+                Some(redis::Value::BulkString(b)) => String::from_utf8_lossy(b).to_string(),
+                _ => "unknown".to_string(),
+            };
 
-        let encoding: Option<String> = redis::cmd("OBJECT")
-            .arg("ENCODING")
-            .arg(key)
-            .query_async(conn)
-            .await
-            .ok();
+            let ttl = match results.get(ttl_idx) {
+                Some(redis::Value::Int(n)) => *n,
+                _ => -1,
+            };
 
-        Ok(KeyInfo {
-            key: key.to_string(),
-            key_type,
-            ttl,
-            size,
-            encoding,
-        })
+            key_infos.push(KeyInfo {
+                key: (*key).clone(),
+                key_type,
+                ttl,
+                size: None,      // Skip for speed - load on demand
+                encoding: None,  // Skip for speed - load on demand
+            });
+        }
+
+        Ok(key_infos)
     }
 
     pub async fn get_key_value(&self, server_id: &str, key: &str) -> Result<KeyValue, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
 
-        let key_type: String = redis::cmd("TYPE")
-            .arg(key)
+        // Pipeline TYPE and TTL together for speed
+        let mut pipe = redis::pipe();
+        pipe.cmd("TYPE").arg(key);
+        pipe.cmd("TTL").arg(key);
+        
+        let results: Vec<redis::Value> = pipe
             .query_async(&mut redis_conn.conn)
             .await
             .map_err(|e| e.to_string())?;
 
-        let ttl: i64 = redis::cmd("TTL")
-            .arg(key)
-            .query_async(&mut redis_conn.conn)
-            .await
-            .unwrap_or(-1);
+        let key_type = match results.get(0) {
+            Some(redis::Value::SimpleString(s)) => s.clone(),
+            Some(redis::Value::BulkString(b)) => String::from_utf8_lossy(b).to_string(),
+            _ => "unknown".to_string(),
+        };
 
-        let size: Option<u64> = redis::cmd("MEMORY")
-            .arg("USAGE")
-            .arg(key)
-            .query_async(&mut redis_conn.conn)
-            .await
-            .ok();
+        let ttl = match results.get(1) {
+            Some(redis::Value::Int(n)) => *n,
+            _ => -1,
+        };
+
+        // Skip MEMORY USAGE - it's slow and not essential
+        let size: Option<u64> = None;
 
         let value = match key_type.as_str() {
             "string" => {
