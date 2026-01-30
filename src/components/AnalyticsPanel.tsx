@@ -20,7 +20,9 @@ interface AnalyticsPanelProps {
 export function AnalyticsPanel({ serverId }: AnalyticsPanelProps) {
   const [analytics, setAnalytics] = useState<AdvancedAnalytics | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("memory");
+  const [activeTab, setActiveTab] = useState("commands");
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [latencyLoading, setLatencyLoading] = useState(false);
 
   const loadAnalytics = async () => {
     setLoading(true);
@@ -33,6 +35,48 @@ export function AnalyticsPanel({ serverId }: AnalyticsPanelProps) {
       setLoading(false);
     }
   };
+
+  const loadMemoryAnalytics = async () => {
+    if (analytics?.memoryStats) return; // Already loaded
+    setMemoryLoading(true);
+    try {
+      const [memoryStats, memoryDoctor] = await invoke<[unknown, string | null]>("get_memory_analytics", { serverId });
+      setAnalytics(prev => prev ? {
+        ...prev,
+        memoryStats: memoryStats as AdvancedAnalytics['memoryStats'],
+        memoryDoctor: memoryDoctor ?? undefined,
+      } : null);
+    } catch (e) {
+      console.error("Failed to load memory analytics:", e);
+    } finally {
+      setMemoryLoading(false);
+    }
+  };
+
+  const loadLatencyAnalytics = async () => {
+    if (analytics?.latencyDoctor) return; // Already loaded
+    setLatencyLoading(true);
+    try {
+      const latencyDoctor = await invoke<string | null>("get_latency_analytics", { serverId });
+      setAnalytics(prev => prev ? {
+        ...prev,
+        latencyDoctor: latencyDoctor ?? undefined,
+      } : null);
+    } catch (e) {
+      console.error("Failed to load latency analytics:", e);
+    } finally {
+      setLatencyLoading(false);
+    }
+  };
+
+  // Load heavy analytics when tab is selected
+  useEffect(() => {
+    if (activeTab === "memory" && analytics && !analytics.memoryStats) {
+      loadMemoryAnalytics();
+    } else if (activeTab === "diagnostics" && analytics && !analytics.latencyDoctor) {
+      loadLatencyAnalytics();
+    }
+  }, [activeTab, analytics]);
 
   useEffect(() => {
     loadAnalytics();
@@ -76,6 +120,21 @@ export function AnalyticsPanel({ serverId }: AnalyticsPanelProps) {
         </TabsList>
 
         <TabsContent value="memory">
+          {memoryLoading && (
+            <div className="flex items-center justify-center h-64 text-muted-foreground">
+              <RefreshCw className="h-6 w-6 animate-spin mr-2" />
+              Loading memory analytics...
+            </div>
+          )}
+          {!memoryLoading && !analytics?.memoryStats && (
+            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+              <HardDrive className="h-12 w-12 mb-4 opacity-50" />
+              <p>Memory analytics will load automatically</p>
+              <Button onClick={loadMemoryAnalytics} variant="outline" className="mt-4">
+                Load Now
+              </Button>
+            </div>
+          )}
           {analytics?.memoryStats && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
               <Card>
@@ -521,6 +580,12 @@ export function AnalyticsPanel({ serverId }: AnalyticsPanelProps) {
 
         <TabsContent value="diagnostics">
           <div className="space-y-4 mt-4">
+            {latencyLoading && (
+              <div className="flex items-center justify-center h-32 text-muted-foreground">
+                <RefreshCw className="h-6 w-6 animate-spin mr-2" />
+                Loading latency diagnostics...
+              </div>
+            )}
             {analytics?.latencyDoctor && (
               <Card>
                 <CardHeader>

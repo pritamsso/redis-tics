@@ -1,4 +1,5 @@
-import { Database, Plus, Trash2, Plug, Unplug, Heart, Github } from "lucide-react";
+import { Plus, Trash2, Plug, Unplug, Heart, Github } from "lucide-react";
+import { open } from "@tauri-apps/plugin-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -30,8 +31,8 @@ export function Sidebar({
     <div className="w-64 border-r bg-card flex flex-col h-full">
       <div className="p-4 border-b">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center shadow-lg">
-            <Database className="h-5 w-5 text-white" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center shadow-lg text-white font-bold text-sm">
+            RT
           </div>
           <div>
             <h1 className="font-bold text-lg leading-tight">Redis Tics</h1>
@@ -133,33 +134,27 @@ export function Sidebar({
         <div className="text-center space-y-2">
           <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
             Made with <Heart className="h-3 w-3 text-red-500 fill-red-500" /> by
-            <a 
-              href="https://github.com/pritamsso" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-red-500 hover:underline font-medium"
+            <button 
+              onClick={() => open("https://github.com/pritamsso")}
+              className="text-red-500 hover:underline font-medium cursor-pointer"
             >
               @pritamsso
-            </a>
+            </button>
           </p>
           <div className="flex items-center justify-center gap-3">
-            <a 
-              href="https://redistics.com" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            <button 
+              onClick={() => open("https://redistics.com")}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             >
               🌐 redistics.com
-            </a>
-            <a 
-              href="https://github.com/pritamsso/redis-tics" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            </button>
+            <button 
+              onClick={() => open("https://github.com/pritamsso/redis-tics")}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             >
               <Github className="h-3 w-3" />
               GitHub
-            </a>
+            </button>
           </div>
         </div>
       </div>

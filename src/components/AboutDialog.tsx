@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Github, ExternalLink, RefreshCw, Download, CheckCircle } from "lucide-react";
@@ -7,8 +7,6 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-shell";
 
-const APP_VERSION = "1.0.0";
-
 export function AboutDialog() {
   const [checking, setChecking] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
@@ -16,25 +14,35 @@ export function AboutDialog() {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [installed, setInstalled] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentVersion, setCurrentVersion] = useState(APP_VERSION);
+  const [currentVersion, setCurrentVersion] = useState("Loading...");
+
+  // Load version on mount
+  useEffect(() => {
+    getVersion().then(setCurrentVersion).catch(() => setCurrentVersion("1.0.0"));
+  }, []);
 
   const checkForUpdates = async () => {
     setChecking(true);
     setError(null);
+    setUpdateAvailable(null);
     try {
-      const version = await getVersion();
-      setCurrentVersion(version);
-      
       const update = await check();
-      if (update) {
+      if (update && update.available) {
         setUpdateAvailable(update.version);
       } else {
-        setUpdateAvailable(null);
         setError("You're on the latest version!");
       }
     } catch (err) {
-      setError("Failed to check for updates");
-      console.error(err);
+      // Handle common errors gracefully
+      const errStr = String(err);
+      if (errStr.includes("No updates available") || errStr.includes("up to date")) {
+        setError("You're on the latest version!");
+      } else if (errStr.includes("network") || errStr.includes("fetch")) {
+        setError("Network error - check your connection");
+      } else {
+        setError("Could not check for updates");
+      }
+      console.error("Update check error:", err);
     } finally {
       setChecking(false);
     }

@@ -71,9 +71,11 @@ const DialogContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
           <div
             ref={ref}
             className={cn(
-              "w-full max-w-lg rounded-lg border bg-background p-6 shadow-lg relative",
+              "w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-2xl relative",
+              "backdrop-blur-none",
               className
             )}
+            style={{ backgroundColor: 'hsl(var(--card))' }}
             {...props}
           >
             {children}
