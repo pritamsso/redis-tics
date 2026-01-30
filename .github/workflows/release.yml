@@ -363,21 +363,36 @@ jobs:
             exit 0
           fi
           
+          # Reset any other unstaged changes to ensure clean state
+          echo "🧹 Ensuring clean git state..."
+          git diff --name-only | grep -v "docs/releases.json" | xargs -r git checkout --
+          git status --short
+          
           # Commit changes
           git commit -m "chore: update releases.json for v${{ steps.get_version.outputs.version }} [skip ci]"
           
-          # Pull latest changes with rebase to avoid conflicts
-          echo "📥 Pulling latest changes from remote..."
-          git pull --rebase origin main || {
+          # Fetch and rebase to handle any remote changes
+          echo "📥 Fetching latest changes from remote..."
+          git fetch origin main
+          
+          echo "🔄 Rebasing on origin/main..."
+          git rebase origin/main || {
             echo "⚠️ Rebase conflict detected, attempting to resolve..."
-            # Accept our version of releases.json
-            git checkout --ours docs/releases.json
-            git add docs/releases.json
-            git rebase --continue || {
-              echo "❌ Failed to resolve conflicts"
+            # Check if conflict is in releases.json
+            if git diff --name-only --diff-filter=U | grep -q "docs/releases.json"; then
+              echo "📝 Accepting our version of releases.json..."
+              git checkout --ours docs/releases.json
+              git add docs/releases.json
+              git rebase --continue || {
+                echo "❌ Failed to resolve conflicts"
+                git rebase --abort
+                exit 1
+              }
+            else
+              echo "❌ Unexpected conflict in other files"
               git rebase --abort
               exit 1
-            }
+            fi
           }
           
           # Push changes
