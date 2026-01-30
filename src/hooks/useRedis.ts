@@ -60,7 +60,15 @@ export function useRedis() {
   };
 
   const addServer = useCallback(async (server: Omit<RedisServer, "id">) => {
-    const newServer: RedisServer = { ...server, id: crypto.randomUUID() };
+    let encryptedPassword = server.password;
+    if (server.password) {
+      try {
+        encryptedPassword = await invoke<string>("encrypt_server_password", { password: server.password });
+      } catch {
+        // If encryption fails, store as-is (for dev mode)
+      }
+    }
+    const newServer: RedisServer = { ...server, password: encryptedPassword, id: crypto.randomUUID() };
     const updatedServers = [...servers, newServer];
     setServers(updatedServers);
     await invoke("save_servers", { servers: updatedServers });
@@ -82,7 +90,16 @@ export function useRedis() {
     setConnectionStates((prev) => ({ ...prev, [serverId]: { serverId, connected: false, monitoring: false } }));
 
     try {
-      await invoke("connect_redis", { server });
+      let decryptedPassword = server.password;
+      if (server.password) {
+        try {
+          decryptedPassword = await invoke<string>("decrypt_server_password", { encrypted: server.password });
+        } catch {
+          // If decryption fails, use as-is (might be plain text from old version)
+        }
+      }
+      const serverWithDecryptedPassword = { ...server, password: decryptedPassword };
+      await invoke("connect_redis", { server: serverWithDecryptedPassword });
       setConnectionStates((prev) => ({ ...prev, [serverId]: { serverId, connected: true, monitoring: false } }));
       setActiveServerId(serverId);
       await refreshInfo(serverId);

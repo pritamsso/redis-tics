@@ -186,7 +186,8 @@
       same "printed page" as the copyright notice for easier
       identification within third-party archives.
 
-   Copyright [yyyy] [name of copyright owner]
+   Copyright 2025 Pritam (@pritamsso)
+   GitHub: https://github.com/pritamsso
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -199,3 +200,33 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+   ==========================================================================
+   ADDITIONAL TERMS - ATTRIBUTION REQUIREMENT
+   ==========================================================================
+
+   In addition to the terms of the Apache License 2.0, the following 
+   attribution requirements apply to this software:
+
+   1. CREDITS PRESERVATION: You must NOT remove, modify, alter, or obscure 
+      any credits, attribution notices, or references to the original 
+      developer (Pritam, @pritamsso) in the source code, documentation, 
+      user interface, or any other part of the software.
+
+   2. VISIBLE ATTRIBUTION: Any derivative works, forks, or distributions 
+      of this software must prominently display the following attribution:
+      "Originally developed by Pritam (@pritamsso)"
+      This attribution must be visible in the application's About section,
+      README file, and any other relevant documentation.
+
+   3. NO MISREPRESENTATION: You may not claim to be the original author 
+      of this software or misrepresent the origin of this software.
+
+   4. LINK PRESERVATION: Any references or links to the original developer's 
+      GitHub profile (https://github.com/pritamsso) and the original 
+      repository (https://github.com/pritamsso/redis-tics) must be preserved 
+      and remain functional.
+
+   Failure to comply with these attribution requirements constitutes a 
+   violation of this license and may result in termination of your rights 
+   under this license.

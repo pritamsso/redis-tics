@@ -1,6 +1,8 @@
+mod crypto;
 mod redis_client;
 mod types;
 
+use crypto::{encrypt_password, decrypt_password};
 use redis_client::RedisManager;
 use std::sync::Arc;
 use types::*;
@@ -92,6 +94,16 @@ async fn get_command_stats(
     state.get_command_stats(&server_id).await
 }
 
+#[tauri::command]
+fn encrypt_server_password(password: String) -> Result<String, String> {
+    encrypt_password(&password)
+}
+
+#[tauri::command]
+fn decrypt_server_password(encrypted: String) -> Result<String, String> {
+    decrypt_password(&encrypted)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let redis_manager = Arc::new(RedisManager::new());
@@ -110,6 +122,8 @@ pub fn run() {
             get_advanced_analytics,
             get_slow_log,
             get_command_stats,
+            encrypt_server_password,
+            decrypt_server_password,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

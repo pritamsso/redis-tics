@@ -1,4 +1,4 @@
-import { Database, Plus, Trash2, Plug, Unplug } from "lucide-react";
+import { Database, Plus, Trash2, Plug, Unplug, Heart, Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -118,10 +118,32 @@ export function Sidebar({
         )}
       </ScrollArea>
 
-      <div className="p-4 border-t">
+      <div className="p-4 border-t space-y-3">
         <Badge variant="secondary" className="w-full justify-center">
           {servers.length} server{servers.length !== 1 ? "s" : ""}
         </Badge>
+        <div className="text-center space-y-2">
+          <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+            Made with <Heart className="h-3 w-3 text-red-500 fill-red-500" /> by
+            <a 
+              href="https://github.com/pritamsso" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-red-500 hover:underline font-medium"
+            >
+              @pritamsso
+            </a>
+          </p>
+          <a 
+            href="https://github.com/pritamsso/redis-tics" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Github className="h-3 w-3" />
+            View on GitHub
+          </a>
+        </div>
       </div>
     </div>
   );

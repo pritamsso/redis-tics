@@ -5,6 +5,7 @@ import { ServerInfoPanel } from "@/components/ServerInfoPanel";
 import { ClientsPanel } from "@/components/ClientsPanel";
 import { MonitorPanel } from "@/components/MonitorPanel";
 import { AnalyticsPanel } from "@/components/AnalyticsPanel";
+import { AboutDialog } from "@/components/AboutDialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Database } from "lucide-react";
@@ -98,10 +99,13 @@ function App() {
                   </TabsList>
                 </Tabs>
               </div>
-              <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-2">
-                <RefreshCw className="h-4 w-4" />
-                Refresh
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-2">
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh
+                </Button>
+                <AboutDialog />
+              </div>
             </header>
 
             <div className="flex-1 overflow-auto p-6">

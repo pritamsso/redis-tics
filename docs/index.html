@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Redis Tics - Real-time Redis Analytics Dashboard</title>
+  <meta name="description" content="A powerful, open-source Redis analytics and monitoring tool built with Tauri, React, and Rust. Monitor multiple Redis servers in real-time.">
+  <meta name="keywords" content="redis, analytics, monitoring, dashboard, tauri, rust, open-source">
+  <meta name="author" content="pritamsso">
+  <link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/pritamsso/redis-tics/main/src-tauri/icons/icon.png">
+  <style>
+    :root {
+      --primary: #ef4444;
+      --primary-dark: #dc2626;
+      --bg-dark: #0f0f0f;
+      --bg-card: #1a1a1a;
+      --text: #ffffff;
+      --text-muted: #a1a1a1;
+      --border: #2a2a2a;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg-dark);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    
+    /* Header */
+    header {
+      padding: 20px 0;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(15, 15, 15, 0.95);
+      backdrop-filter: blur(10px);
+      z-index: 100;
+    }
+    
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.5rem;
+      font-weight: 700;
+      text-decoration: none;
+      color: var(--text);
+    }
+    
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, var(--primary), #f97316);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+    }
+    
+    .nav-links {
+      display: flex;
+      gap: 32px;
+      list-style: none;
+    }
+    
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    
+    .nav-links a:hover {
+      color: var(--text);
+    }
+    
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: var(--primary-dark);
+      transform: translateY(-2px);
+    }
+    
+    .btn-outline {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    
+    .btn-outline:hover {
+      background: var(--bg-card);
+      border-color: var(--text-muted);
+    }
+    
+    /* Hero */
+    .hero {
+      padding: 100px 0;
+      text-align: center;
+    }
+    
+    .hero h1 {
+      font-size: 4rem;
+      font-weight: 800;
+      margin-bottom: 24px;
+      background: linear-gradient(135deg, var(--text), var(--primary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .hero p {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 600px;
+      margin: 0 auto 40px;
+    }
+    
+    .hero-buttons {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    
+    .hero-image {
+      margin-top: 60px;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5);
+      border: 1px solid var(--border);
+    }
+    
+    .hero-image img {
+      width: 100%;
+      display: block;
+    }
+    
+    /* Features */
+    .features {
+      padding: 100px 0;
+    }
+    
+    .section-title {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+    
+    .section-title h2 {
+      font-size: 2.5rem;
+      margin-bottom: 16px;
+    }
+    
+    .section-title p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+    }
+    
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 24px;
+    }
+    
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    
+    .feature-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--primary);
+    }
+    
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      background: rgba(239, 68, 68, 0.1);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      font-size: 1.5rem;
+    }
+    
+    .feature-card h3 {
+      font-size: 1.25rem;
+      margin-bottom: 12px;
+    }
+    
+    .feature-card p {
+      color: var(--text-muted);
+    }
+    
+    /* Installation */
+    .installation {
+      padding: 100px 0;
+      background: var(--bg-card);
+    }
+    
+    .code-block {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-top: 32px;
+      overflow-x: auto;
+    }
+    
+    .code-block pre {
+      font-family: 'Fira Code', 'Monaco', monospace;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+    
+    .code-block code {
+      color: #22c55e;
+    }
+    
+    .code-comment {
+      color: #6b7280;
+    }
+    
+    /* Footer */
+    footer {
+      padding: 60px 0;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+    
+    .footer-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+    }
+    
+    .footer-links {
+      display: flex;
+      gap: 32px;
+      list-style: none;
+    }
+    
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    
+    .footer-links a:hover {
+      color: var(--text);
+    }
+    
+    .made-with-love {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+    
+    .made-with-love a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    
+    .made-with-love a:hover {
+      text-decoration: underline;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+      .hero h1 {
+        font-size: 2.5rem;
+      }
+      
+      .nav-links {
+        display: none;
+      }
+      
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container">
+      <a href="#" class="logo">
+        <div class="logo-icon">📊</div>
+        Redis Tics
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#installation">Installation</a></li>
+        <li><a href="https://github.com/pritamsso/redis-tics" target="_blank">GitHub</a></li>
+      </ul>
+      <a href="https://github.com/pritamsso/redis-tics/releases" class="btn btn-primary" target="_blank">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Download
+      </a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <h1>Redis Tics</h1>
+        <p>A powerful, open-source Redis analytics and monitoring dashboard. Monitor multiple servers, track commands in real-time, analyze memory usage, and diagnose performance issues.</p>
+        <div class="hero-buttons">
+          <a href="https://github.com/pritamsso/redis-tics/releases" class="btn btn-primary" target="_blank">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Download for macOS
+          </a>
+          <a href="https://github.com/pritamsso/redis-tics" class="btn btn-outline" target="_blank">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+            </svg>
+            View on GitHub
+          </a>
+        </div>
+        <div class="hero-image">
+          <img src="https://raw.githubusercontent.com/pritamsso/redis-tics/main/docs/screenshot.png" alt="Redis Tics Dashboard Screenshot" onerror="this.parentElement.style.display='none'">
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="container">
+        <div class="section-title">
+          <h2>Powerful Features</h2>
+          <p>Everything you need to monitor and analyze your Redis servers</p>
+        </div>
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon">🖥️</div>
+            <h3>Multi-Server Management</h3>
+            <p>Connect and monitor multiple Redis servers simultaneously. Switch between servers instantly with persistent connection configurations.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">📡</div>
+            <h3>Real-time Monitoring</h3>
+            <p>Live command monitoring with MONITOR command. Track commands by IP address, filter by command type, and analyze traffic patterns.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">💾</div>
+            <h3>Memory Analytics</h3>
+            <p>Deep memory analysis with MEMORY STATS and MEMORY DOCTOR. Track allocation, fragmentation, dataset size, and get optimization recommendations.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">⚡</div>
+            <h3>Command Statistics</h3>
+            <p>Detailed command statistics showing call counts, latency per call, rejected and failed calls. Identify slow and hot commands instantly.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🐢</div>
+            <h3>Slow Log Analysis</h3>
+            <p>View and analyze slow queries with SLOWLOG. Color-coded severity badges, client information, and execution duration for each slow command.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🔄</div>
+            <h3>Cluster Support</h3>
+            <p>Full Redis Cluster monitoring with CLUSTER INFO and CLUSTER NODES. Track cluster state, slot distribution, and node health.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">💿</div>
+            <h3>Persistence Status</h3>
+            <p>Monitor RDB and AOF persistence. Track last save time, changes since save, BGSAVE status, AOF rewrite progress, and more.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🔍</div>
+            <h3>Diagnostics</h3>
+            <p>Built-in LATENCY DOCTOR and error statistics tracking. Get automated latency analysis and identify recurring errors.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="installation" id="installation">
+      <div class="container">
+        <div class="section-title">
+          <h2>Quick Start</h2>
+          <p>Get up and running in minutes</p>
+        </div>
+        <div class="code-block">
+          <pre><span class="code-comment"># Clone the repository</span>
+<code>git clone https://github.com/pritamsso/redis-tics.git</code>
+<code>cd redis-tics</code>
+
+<span class="code-comment"># Install dependencies</span>
+<code>npm install</code>
+
+<span class="code-comment"># Run in development mode</span>
+<code>cargo tauri dev</code>
+
+<span class="code-comment"># Build for production</span>
+<code>cargo tauri build</code></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <div class="footer-content">
+        <a href="#" class="logo">
+          <div class="logo-icon">📊</div>
+          Redis Tics
+        </a>
+        <ul class="footer-links">
+          <li><a href="https://github.com/pritamsso/redis-tics" target="_blank">GitHub</a></li>
+          <li><a href="https://github.com/pritamsso/redis-tics/issues" target="_blank">Issues</a></li>
+          <li><a href="https://github.com/pritamsso/redis-tics/releases" target="_blank">Releases</a></li>
+          <li><a href="https://github.com/pritamsso" target="_blank">@pritamsso</a></li>
+        </ul>
+        <p class="made-with-love">
+          Made with ❤️ by <a href="https://github.com/pritamsso" target="_blank">@pritamsso</a>
+        </p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

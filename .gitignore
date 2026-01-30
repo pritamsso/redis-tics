@@ -53,3 +53,15 @@ pids
 debug.log
 TODO.md
 .aider*
+
+# Build output
+dist/
+
+# Tauri generated
+src-tauri/gen/
+
+# Encryption keys (sensitive)
+.key
+
+# Config directory secrets
+redis-tics/.key
