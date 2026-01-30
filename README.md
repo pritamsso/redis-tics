@@ -1,6 +1,12 @@
 # Redis Tics 📊
 
+[![Website](https://img.shields.io/badge/Website-redistics.com-red)](https://redistics.com)
+[![GitHub](https://img.shields.io/github/stars/pritamsso/redis-tics?style=social)](https://github.com/pritamsso/redis-tics)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 A powerful, open-source Redis analytics and monitoring dashboard built with **Tauri**, **React**, and **Rust**. Monitor multiple Redis servers in real-time, analyze memory usage, track commands by IP, and diagnose performance issues.
+
+🌐 **Website**: [redistics.com](https://redistics.com)
 
 ![Redis Tics Dashboard](docs/screenshot.png)
 

@@ -4,10 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Redis Tics - Real-time Redis Analytics Dashboard</title>
-  <meta name="description" content="A powerful, open-source Redis analytics and monitoring tool built with Tauri, React, and Rust. Monitor multiple Redis servers in real-time.">
-  <meta name="keywords" content="redis, analytics, monitoring, dashboard, tauri, rust, open-source">
+  <meta name="description" content="A powerful, open-source Redis analytics and monitoring dashboard built with Tauri, React, and Rust. Monitor multiple Redis servers in real-time, analyze memory usage, track commands by IP, and diagnose performance issues.">
+  <meta name="keywords" content="redis, analytics, monitoring, dashboard, tauri, rust, react, typescript, open-source, memory analysis, slow log, cluster">
   <meta name="author" content="pritamsso">
-  <link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/pritamsso/redis-tics/main/src-tauri/icons/icon.png">
+  <link rel="canonical" href="https://redistics.com">
+  <meta property="og:title" content="Redis Tics - Real-time Redis Analytics Dashboard">
+  <meta property="og:description" content="A powerful, open-source Redis analytics and monitoring dashboard. Monitor multiple servers, track commands in real-time, analyze memory usage.">
+  <meta property="og:url" content="https://redistics.com">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://raw.githubusercontent.com/pritamsso/redis-tics/main/src-tauri/icons/icon.png">
+  <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/pritamsso/redis-tics/main/src-tauri/icons/128x128.png">
+  <link rel="apple-touch-icon" href="https://raw.githubusercontent.com/pritamsso/redis-tics/main/src-tauri/icons/128x128.png">
   <style>
     :root {
       --primary: #ef4444;
@@ -68,12 +75,101 @@
     .logo-icon {
       width: 40px;
       height: 40px;
-      background: linear-gradient(135deg, var(--primary), #f97316);
       border-radius: 10px;
+      overflow: hidden;
+    }
+    
+    .logo-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    
+    .release-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      margin-top: 24px;
+    }
+    
+    .release-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    
+    .release-version {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .release-version h3 {
+      font-size: 1.5rem;
+      margin: 0;
+    }
+    
+    .release-badge {
+      background: var(--primary);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    
+    .release-date {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+    
+    .release-changes {
+      list-style: none;
+      padding: 0;
+      margin: 20px 0;
+    }
+    
+    .release-changes li {
+      padding: 8px 0;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .release-changes li:last-child {
+      border-bottom: none;
+    }
+    
+    .release-changes li::before {
+      content: "✓ ";
+      color: #22c55e;
+    }
+    
+    .download-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-top: 24px;
+    }
+    
+    .download-btn {
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.2rem;
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    
+    .download-btn:hover {
+      border-color: var(--primary);
+      background: rgba(239, 68, 68, 0.1);
     }
     
     .nav-links {
@@ -323,12 +419,15 @@
 <body>
   <header>
     <nav class="container">
-      <a href="#" class="logo">
-        <div class="logo-icon">📊</div>
+      <a href="https://redistics.com" class="logo">
+        <div class="logo-icon">
+          <img src="https://raw.githubusercontent.com/pritamsso/redis-tics/main/src-tauri/icons/128x128.png" alt="Redis Tics Logo">
+        </div>
         Redis Tics
       </a>
       <ul class="nav-links">
         <li><a href="#features">Features</a></li>
+        <li><a href="#releases">Releases</a></li>
         <li><a href="#installation">Installation</a></li>
         <li><a href="https://github.com/pritamsso/redis-tics" target="_blank">GitHub</a></li>
       </ul>
@@ -427,6 +526,29 @@
           <h2>Quick Start</h2>
           <p>Get up and running in minutes</p>
         </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-bottom: 40px;">
+          <div class="feature-card">
+            <div class="feature-icon">🍎</div>
+            <h3>macOS</h3>
+            <p>Download the <code>.dmg</code> file. After installing, if you see "damaged" error, run:<br><code style="color: #22c55e; font-size: 0.85rem;">xattr -cr /Applications/Redis\ Tics.app</code></p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🪟</div>
+            <h3>Windows</h3>
+            <p>Download and run the <code>.msi</code> installer or <code>.exe</code> file. Click "More info" → "Run anyway" if SmartScreen appears.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🐧</div>
+            <h3>Linux</h3>
+            <p>Download <code>.deb</code> for Ubuntu/Debian or <code>.AppImage</code> for other distros. Make AppImage executable with <code>chmod +x</code>.</p>
+          </div>
+        </div>
+
+        <div class="section-title">
+          <h3>Build from Source</h3>
+          <p>Requires Node.js 18+ and Rust</p>
+        </div>
         <div class="code-block">
           <pre><span class="code-comment"># Clone the repository</span>
 <code>git clone https://github.com/pritamsso/redis-tics.git</code>
@@ -443,16 +565,51 @@
         </div>
       </div>
     </section>
+
+    <section class="installation" id="releases">
+      <div class="container">
+        <div class="section-title">
+          <h2>Latest Releases</h2>
+          <p>Download the latest version for your platform</p>
+        </div>
+        <div id="releases-container">
+          <div class="release-card">
+            <p style="text-align: center; color: var(--text-muted);">Loading releases...</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="tech">
+      <div class="container">
+        <div class="section-title">
+          <h2>Tech Stack</h2>
+          <p>Built with modern, performant technologies</p>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 16px;">
+          <span style="background: var(--bg-card); border: 1px solid var(--border); padding: 12px 24px; border-radius: 8px;">⚛️ React</span>
+          <span style="background: var(--bg-card); border: 1px solid var(--border); padding: 12px 24px; border-radius: 8px;">🦀 Rust</span>
+          <span style="background: var(--bg-card); border: 1px solid var(--border); padding: 12px 24px; border-radius: 8px;">🔧 Tauri v2</span>
+          <span style="background: var(--bg-card); border: 1px solid var(--border); padding: 12px 24px; border-radius: 8px;">📘 TypeScript</span>
+          <span style="background: var(--bg-card); border: 1px solid var(--border); padding: 12px 24px; border-radius: 8px;">🎨 TailwindCSS v4</span>
+          <span style="background: var(--bg-card); border: 1px solid var(--border); padding: 12px 24px; border-radius: 8px;">📊 Recharts</span>
+          <span style="background: var(--bg-card); border: 1px solid var(--border); padding: 12px 24px; border-radius: 8px;">⚡ Vite</span>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer>
     <div class="container">
       <div class="footer-content">
-        <a href="#" class="logo">
-          <div class="logo-icon">📊</div>
+        <a href="https://redistics.com" class="logo">
+          <div class="logo-icon">
+            <img src="https://raw.githubusercontent.com/pritamsso/redis-tics/main/src-tauri/icons/128x128.png" alt="Redis Tics Logo">
+          </div>
           Redis Tics
         </a>
         <ul class="footer-links">
+          <li><a href="https://redistics.com">Website</a></li>
           <li><a href="https://github.com/pritamsso/redis-tics" target="_blank">GitHub</a></li>
           <li><a href="https://github.com/pritamsso/redis-tics/issues" target="_blank">Issues</a></li>
           <li><a href="https://github.com/pritamsso/redis-tics/releases" target="_blank">Releases</a></li>
@@ -461,8 +618,84 @@
         <p class="made-with-love">
           Made with ❤️ by <a href="https://github.com/pritamsso" target="_blank">@pritamsso</a>
         </p>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;">
+          Apache License 2.0 • Open Source
+        </p>
       </div>
     </div>
   </footer>
+
+  <script>
+    async function loadReleases() {
+      try {
+        const response = await fetch('releases.json');
+        const data = await response.json();
+        renderReleases(data);
+      } catch (error) {
+        console.error('Failed to load releases:', error);
+        document.getElementById('releases-container').innerHTML = `
+          <div class="release-card">
+            <p style="text-align: center; color: var(--text-muted);">
+              Unable to load releases. <a href="https://github.com/pritamsso/redis-tics/releases" target="_blank" style="color: var(--primary);">View on GitHub</a>
+            </p>
+          </div>
+        `;
+      }
+    }
+
+    function renderReleases(data) {
+      const container = document.getElementById('releases-container');
+      let html = '';
+
+      data.releases.forEach((release, index) => {
+        const isLatest = release.version === data.latest;
+        html += `
+          <div class="release-card">
+            <div class="release-header">
+              <div class="release-version">
+                <h3>v${release.version}</h3>
+                ${isLatest ? '<span class="release-badge">Latest</span>' : ''}
+              </div>
+              <span class="release-date">${formatDate(release.date)}</span>
+            </div>
+            <p style="color: var(--text-muted); margin-bottom: 16px;">${release.description}</p>
+            
+            <h4 style="margin-bottom: 12px;">What's New</h4>
+            <ul class="release-changes">
+              ${release.changes.slice(0, 8).map(change => `<li>${change}</li>`).join('')}
+              ${release.changes.length > 8 ? `<li style="color: var(--primary);">...and ${release.changes.length - 8} more improvements</li>` : ''}
+            </ul>
+
+            <h4 style="margin: 24px 0 12px;">Downloads</h4>
+            <div class="download-grid">
+              ${release.downloads.macos_arm ? `<a href="${release.downloads.macos_arm}" class="download-btn">🍎 macOS (Apple Silicon)</a>` : ''}
+              ${release.downloads.macos_intel ? `<a href="${release.downloads.macos_intel}" class="download-btn">🍎 macOS (Intel)</a>` : ''}
+              ${release.downloads.windows_msi ? `<a href="${release.downloads.windows_msi}" class="download-btn">🪟 Windows (.msi)</a>` : ''}
+              ${release.downloads.windows_exe ? `<a href="${release.downloads.windows_exe}" class="download-btn">🪟 Windows (.exe)</a>` : ''}
+              ${release.downloads.linux_deb ? `<a href="${release.downloads.linux_deb}" class="download-btn">🐧 Linux (.deb)</a>` : ''}
+              ${release.downloads.linux_appimage ? `<a href="${release.downloads.linux_appimage}" class="download-btn">🐧 Linux (.AppImage)</a>` : ''}
+            </div>
+          </div>
+        `;
+      });
+
+      html += `
+        <div style="text-align: center; margin-top: 32px;">
+          <a href="https://github.com/pritamsso/redis-tics/releases" target="_blank" class="btn btn-outline">
+            View All Releases on GitHub
+          </a>
+        </div>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    function formatDate(dateStr) {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    }
+
+    document.addEventListener('DOMContentLoaded', loadReleases);
+  </script>
 </body>
 </html>

@@ -40,6 +40,20 @@ export function AboutDialog() {
 
           <div className="pt-4 border-t space-y-4">
             <a 
+              href="https://redistics.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 p-3 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors"
+            >
+              <div className="w-5 h-5 flex items-center justify-center">🌐</div>
+              <div className="flex-1">
+                <div className="font-medium">Website</div>
+                <div className="text-xs text-muted-foreground">redistics.com</div>
+              </div>
+              <ExternalLink className="h-4 w-4 text-muted-foreground" />
+            </a>
+
+            <a 
               href="https://github.com/pritamsso/redis-tics" 
               target="_blank" 
               rel="noopener noreferrer"

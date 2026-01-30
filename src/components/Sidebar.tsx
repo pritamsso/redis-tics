@@ -134,15 +134,25 @@ export function Sidebar({
               @pritamsso
             </a>
           </p>
-          <a 
-            href="https://github.com/pritamsso/redis-tics" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Github className="h-3 w-3" />
-            View on GitHub
-          </a>
+          <div className="flex items-center justify-center gap-3">
+            <a 
+              href="https://redistics.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              🌐 redistics.com
+            </a>
+            <a 
+              href="https://github.com/pritamsso/redis-tics" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Github className="h-3 w-3" />
+              GitHub
+            </a>
+          </div>
         </div>
       </div>
     </div>

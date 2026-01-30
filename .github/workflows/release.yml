@@ -227,3 +227,58 @@ jobs:
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update releases.json for website
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          DATE=$(date +%Y-%m-%d)
+          
+          # Get commit messages for changes
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            CHANGES=$(git log ${LAST_TAG}..HEAD --pretty=format:'"%s"' --no-merges | head -15 | tr '\n' ',' | sed 's/,$//')
+          else
+            CHANGES='"Initial release with multi-server management","Real-time command monitoring","Memory analytics with MEMORY STATS","Command statistics and slow log analysis","Redis Cluster support","Persistence status monitoring","Cross-platform support (macOS, Windows, Linux)"'
+          fi
+          
+          # Create new release entry
+          cat > /tmp/new_release.json << EOF
+          {
+            "version": "${VERSION}",
+            "date": "${DATE}",
+            "title": "Redis Tics v${VERSION}",
+            "description": "New release of Redis Tics",
+            "changes": [${CHANGES}],
+            "downloads": {
+              "macos_arm": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_aarch64.dmg",
+              "macos_intel": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_x64.dmg",
+              "windows_msi": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_x64-setup.msi",
+              "windows_exe": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_x64-setup.exe",
+              "linux_deb": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/redis-tics_${VERSION}_amd64.deb",
+              "linux_appimage": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_amd64.AppImage"
+            }
+          }
+          EOF
+          
+          # Update releases.json
+          if [ -f docs/releases.json ]; then
+            # Add new release to existing file
+            jq --argjson new "$(cat /tmp/new_release.json)" \
+               '.latest = $new.version | .releases = [$new] + .releases' \
+               docs/releases.json > /tmp/releases_updated.json
+            mv /tmp/releases_updated.json docs/releases.json
+          else
+            # Create new file
+            jq -n --argjson new "$(cat /tmp/new_release.json)" \
+               '{latest: $new.version, releases: [$new]}' > docs/releases.json
+          fi
+          
+          cat docs/releases.json
+
+      - name: Commit and push releases.json
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add docs/releases.json
+          git diff --staged --quiet || git commit -m "chore: update releases.json for v${{ steps.get_version.outputs.version }}"
+          git push

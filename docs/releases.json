@@ -1,0 +1,34 @@
+{
+  "latest": "1.0.0",
+  "releases": [
+    {
+      "version": "1.0.0",
+      "date": "2025-01-30",
+      "title": "Initial Release",
+      "description": "First public release of Redis Tics",
+      "changes": [
+        "Multi-server management with persistent configurations",
+        "Real-time command monitoring using Redis MONITOR",
+        "IP address tracking and command distribution analytics",
+        "Memory analytics with MEMORY STATS and MEMORY DOCTOR",
+        "Command statistics showing call counts, latency, and failures",
+        "Slow log analysis with SLOWLOG GET",
+        "Redis Cluster support with CLUSTER INFO and CLUSTER NODES",
+        "RDB and AOF persistence status monitoring",
+        "CPU usage statistics and error tracking",
+        "LATENCY DOCTOR diagnostics",
+        "Beautiful dark-themed UI with charts",
+        "Cross-platform support (macOS, Windows, Linux)",
+        "AES-256-GCM password encryption for secure storage"
+      ],
+      "downloads": {
+        "macos_arm": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.0/Redis.Tics_1.0.0_aarch64.dmg",
+        "macos_intel": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.0/Redis.Tics_1.0.0_x64.dmg",
+        "windows_msi": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.0/Redis.Tics_1.0.0_x64-setup.msi",
+        "windows_exe": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.0/Redis.Tics_1.0.0_x64-setup.exe",
+        "linux_deb": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.0/redis-tics_1.0.0_amd64.deb",
+        "linux_appimage": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.0/Redis.Tics_1.0.0_amd64.AppImage"
+      }
+    }
+  ]
+}
