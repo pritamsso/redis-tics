@@ -5,15 +5,20 @@ import { ServerInfoPanel } from "@/components/ServerInfoPanel";
 import { ClientsPanel } from "@/components/ClientsPanel";
 import { MonitorPanel } from "@/components/MonitorPanel";
 import { AnalyticsPanel } from "@/components/AnalyticsPanel";
+import { KeyBrowser } from "@/components/KeyBrowser";
+import { RedisCLI } from "@/components/RedisCLI";
+import { DatabaseAnalytics } from "@/components/DatabaseAnalytics";
+import { Dashboard } from "@/components/Dashboard";
+import { UpdateNotification } from "@/components/UpdateNotification";
 import { AboutDialog } from "@/components/AboutDialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Database } from "lucide-react";
+import { RefreshCw, Database, Key, Terminal, BarChart3, LayoutDashboard } from "lucide-react";
 import { useRedis } from "@/hooks/useRedis";
 
 function App() {
   const [showAddServer, setShowAddServer] = useState(false);
-  const [activeTab, setActiveTab] = useState("info");
+  const [activeTab, setActiveTab] = useState("dashboard");
 
   const {
     servers,
@@ -92,10 +97,25 @@ function App() {
               <div className="flex items-center gap-4">
                 <Tabs value={activeTab} onValueChange={setActiveTab}>
                   <TabsList>
-                    <TabsTrigger value="info">Server Info</TabsTrigger>
+                    <TabsTrigger value="dashboard" className="gap-1">
+                      <LayoutDashboard className="h-3 w-3" />
+                      Dashboard
+                    </TabsTrigger>
+                    <TabsTrigger value="keys" className="gap-1">
+                      <Key className="h-3 w-3" />
+                      Keys
+                    </TabsTrigger>
+                    <TabsTrigger value="cli" className="gap-1">
+                      <Terminal className="h-3 w-3" />
+                      CLI
+                    </TabsTrigger>
+                    <TabsTrigger value="db-analysis" className="gap-1">
+                      <BarChart3 className="h-3 w-3" />
+                      Analysis
+                    </TabsTrigger>
                     <TabsTrigger value="clients">Clients</TabsTrigger>
                     <TabsTrigger value="monitor">Monitor</TabsTrigger>
-                    <TabsTrigger value="analytics">Analytics</TabsTrigger>
+                    <TabsTrigger value="info">Server Info</TabsTrigger>
                   </TabsList>
                 </Tabs>
               </div>
@@ -110,11 +130,27 @@ function App() {
 
             <div className="flex-1 overflow-auto p-6">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <TabsContent value="dashboard" className="h-[calc(100vh-180px)]">
+                  <Dashboard
+                    serverName={activeServer?.name || ""}
+                    info={serverInfo[activeServerId]}
+                    onNavigate={setActiveTab}
+                  />
+                </TabsContent>
                 <TabsContent value="info">
                   <ServerInfoPanel
                     info={serverInfo[activeServerId]}
                     serverName={activeServer?.name || ""}
                   />
+                </TabsContent>
+                <TabsContent value="keys" className="h-[calc(100vh-180px)]">
+                  <KeyBrowser serverId={activeServerId} />
+                </TabsContent>
+                <TabsContent value="cli" className="h-[calc(100vh-180px)]">
+                  <RedisCLI serverId={activeServerId} />
+                </TabsContent>
+                <TabsContent value="db-analysis" className="h-[calc(100vh-180px)]">
+                  <DatabaseAnalytics serverId={activeServerId} />
                 </TabsContent>
                 <TabsContent value="clients">
                   <ClientsPanel
@@ -151,6 +187,7 @@ function App() {
         onOpenChange={setShowAddServer}
         onAdd={addServer}
       />
+      <UpdateNotification />
     </div>
   );
 }

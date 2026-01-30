@@ -185,6 +185,40 @@ jobs:
           echo "=== Files to release ==="
           ls -la release-files/
 
+      - name: Generate Tauri updater manifest (latest.json)
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          NOTES="Redis Tics v${VERSION} - See release notes for details"
+          
+          cat > release-files/latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "${NOTES}",
+            "pub_date": "${DATE}",
+            "platforms": {
+              "darwin-aarch64": {
+                "signature": "",
+                "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_aarch64.dmg"
+              },
+              "darwin-x86_64": {
+                "signature": "",
+                "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_x64.dmg"
+              },
+              "linux-x86_64": {
+                "signature": "",
+                "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_amd64.AppImage"
+              },
+              "windows-x86_64": {
+                "signature": "",
+                "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_x64-setup.msi"
+              }
+            }
+          }
+          EOF
+          
+          echo "Generated latest.json for auto-updater"
+
       - name: Generate changelog
         id: changelog
         run: |
@@ -209,6 +243,9 @@ jobs:
           echo "| macOS | Intel | \`Redis Tics_*.dmg\` (x86_64) |" >> RELEASE_NOTES.md
           echo "| Windows | x64 | \`.msi\` or \`.exe\` |" >> RELEASE_NOTES.md
           echo "| Linux | x64 | \`.deb\` or \`.AppImage\` |" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "### 🔄 Auto-Update" >> RELEASE_NOTES.md
+          echo "This version supports automatic updates. You'll be notified when new versions are available." >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
           echo "---" >> RELEASE_NOTES.md
           echo "Made with ❤️ by [@pritamsso](https://github.com/pritamsso)" >> RELEASE_NOTES.md

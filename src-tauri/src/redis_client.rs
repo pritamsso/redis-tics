@@ -356,6 +356,856 @@ impl RedisManager {
             latency_doctor,
         })
     }
+
+    pub async fn scan_keys(&self, server_id: &str, pattern: &str, cursor: &str, count: u32) -> Result<KeyScanResult, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let pattern = if pattern.is_empty() { "*" } else { pattern };
+        
+        let (new_cursor, keys): (String, Vec<String>) = redis::cmd("SCAN")
+            .arg(cursor)
+            .arg("MATCH")
+            .arg(pattern)
+            .arg("COUNT")
+            .arg(count)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut key_infos = Vec::new();
+        for key in keys.iter().take(100) {
+            if let Ok(info) = self.get_key_info_internal(&mut redis_conn.conn, key).await {
+                key_infos.push(info);
+            }
+        }
+
+        Ok(KeyScanResult {
+            keys: key_infos,
+            cursor: new_cursor.clone(),
+            has_more: new_cursor != "0",
+            total_scanned: count as u64,
+        })
+    }
+
+    async fn get_key_info_internal(&self, conn: &mut MultiplexedConnection, key: &str) -> Result<KeyInfo, String> {
+        let key_type: String = redis::cmd("TYPE")
+            .arg(key)
+            .query_async(conn)
+            .await
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        let ttl: i64 = redis::cmd("TTL")
+            .arg(key)
+            .query_async(conn)
+            .await
+            .unwrap_or(-1);
+
+        let size: Option<u64> = redis::cmd("MEMORY")
+            .arg("USAGE")
+            .arg(key)
+            .arg("SAMPLES")
+            .arg(0)
+            .query_async(conn)
+            .await
+            .ok();
+
+        let encoding: Option<String> = redis::cmd("OBJECT")
+            .arg("ENCODING")
+            .arg(key)
+            .query_async(conn)
+            .await
+            .ok();
+
+        Ok(KeyInfo {
+            key: key.to_string(),
+            key_type,
+            ttl,
+            size,
+            encoding,
+        })
+    }
+
+    pub async fn get_key_value(&self, server_id: &str, key: &str) -> Result<KeyValue, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let key_type: String = redis::cmd("TYPE")
+            .arg(key)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let ttl: i64 = redis::cmd("TTL")
+            .arg(key)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .unwrap_or(-1);
+
+        let size: Option<u64> = redis::cmd("MEMORY")
+            .arg("USAGE")
+            .arg(key)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .ok();
+
+        let value = match key_type.as_str() {
+            "string" => {
+                let v: String = redis::cmd("GET")
+                    .arg(key)
+                    .query_async(&mut redis_conn.conn)
+                    .await
+                    .unwrap_or_default();
+                KeyValueData::String(v)
+            }
+            "list" => {
+                let v: Vec<String> = redis::cmd("LRANGE")
+                    .arg(key)
+                    .arg(0)
+                    .arg(999)
+                    .query_async(&mut redis_conn.conn)
+                    .await
+                    .unwrap_or_default();
+                KeyValueData::List(v)
+            }
+            "set" => {
+                let v: Vec<String> = redis::cmd("SMEMBERS")
+                    .arg(key)
+                    .query_async(&mut redis_conn.conn)
+                    .await
+                    .unwrap_or_default();
+                KeyValueData::Set(v)
+            }
+            "zset" => {
+                let v: Vec<(String, f64)> = redis::cmd("ZRANGE")
+                    .arg(key)
+                    .arg(0)
+                    .arg(999)
+                    .arg("WITHSCORES")
+                    .query_async(&mut redis_conn.conn)
+                    .await
+                    .unwrap_or_default();
+                KeyValueData::ZSet(v.into_iter().map(|(member, score)| ZSetMember { member, score }).collect())
+            }
+            "hash" => {
+                let v: HashMap<String, String> = redis::cmd("HGETALL")
+                    .arg(key)
+                    .query_async(&mut redis_conn.conn)
+                    .await
+                    .unwrap_or_default();
+                KeyValueData::Hash(v)
+            }
+            "stream" => {
+                let entries: Vec<redis::Value> = redis::cmd("XRANGE")
+                    .arg(key)
+                    .arg("-")
+                    .arg("+")
+                    .arg("COUNT")
+                    .arg(100)
+                    .query_async(&mut redis_conn.conn)
+                    .await
+                    .unwrap_or_default();
+                KeyValueData::Stream(parse_stream_entries(&entries))
+            }
+            _ => KeyValueData::Unknown(format!("Type '{}' not supported for viewing", key_type)),
+        };
+
+        Ok(KeyValue {
+            key: key.to_string(),
+            key_type,
+            ttl,
+            value,
+            size,
+        })
+    }
+
+    pub async fn get_server_capabilities(&self, server_id: &str) -> Result<ServerCapabilities, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let info_str: String = redis::cmd("INFO")
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut map: HashMap<String, String> = HashMap::new();
+        let mut total_keys: u64 = 0;
+        
+        for line in info_str.lines() {
+            if line.starts_with('#') || line.is_empty() {
+                continue;
+            }
+            if let Some((key, value)) = line.split_once(':') {
+                if key.starts_with("db") {
+                    if let Some(keys_str) = value.split(',').next() {
+                        if let Some(k) = keys_str.strip_prefix("keys=") {
+                            total_keys += k.parse::<u64>().unwrap_or(0);
+                        }
+                    }
+                }
+                map.insert(key.to_string(), value.to_string());
+            }
+        }
+
+        let version = map.get("redis_version").cloned().unwrap_or_default();
+        let server_name = map.get("redis_git_sha1")
+            .or_else(|| map.get("server_name"))
+            .cloned()
+            .unwrap_or_default();
+        
+        let server_type = if version.to_lowercase().contains("valkey") 
+            || server_name.to_lowercase().contains("valkey")
+            || map.get("redis_version").map(|v| v.starts_with("7.2.") || v.starts_with("8.")).unwrap_or(false) 
+                && map.get("os").map(|o| o.contains("valkey")).unwrap_or(false) {
+            "Valkey".to_string()
+        } else {
+            "Redis".to_string()
+        };
+
+        let cluster_enabled_info = map.get("cluster_enabled").map(|v| v == "1").unwrap_or(false);
+        
+        let cluster_info_result: Result<String, _> = redis::cmd("CLUSTER")
+            .arg("INFO")
+            .query_async(&mut redis_conn.conn)
+            .await;
+        
+        let (cluster_enabled, cluster_mode) = match cluster_info_result {
+            Ok(info) => {
+                let state = info.lines()
+                    .find(|l| l.starts_with("cluster_state:"))
+                    .and_then(|l| l.split(':').nth(1))
+                    .unwrap_or("unknown");
+                (true, format!("enabled ({})", state))
+            }
+            Err(e) => {
+                let err_str = e.to_string().to_lowercase();
+                if err_str.contains("cluster") && err_str.contains("disabled") {
+                    (false, "disabled".to_string())
+                } else if cluster_enabled_info {
+                    (true, "enabled (connection may be to a node)".to_string())
+                } else {
+                    (false, "standalone".to_string())
+                }
+            }
+        };
+
+        let role = map.get("role").cloned().unwrap_or_else(|| "master".to_string());
+        let is_read_replica = role == "slave" || role == "replica";
+
+        let supports_memory = redis::cmd("MEMORY")
+            .arg("DOCTOR")
+            .query_async::<String>(&mut redis_conn.conn)
+            .await
+            .is_ok();
+
+        let supports_latency = redis::cmd("LATENCY")
+            .arg("DOCTOR")
+            .query_async::<String>(&mut redis_conn.conn)
+            .await
+            .is_ok();
+
+        let max_clients = map.get("maxclients")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10000);
+
+        Ok(ServerCapabilities {
+            server_type,
+            version,
+            cluster_enabled,
+            cluster_mode,
+            supports_memory_commands: supports_memory,
+            supports_latency_commands: supports_latency,
+            supports_module_commands: true,
+            is_read_replica,
+            max_clients,
+            total_keys,
+        })
+    }
+
+    pub async fn check_operation_impact(&self, server_id: &str, operation: &str, pattern: &str) -> Result<PerformanceWarning, String> {
+        let capabilities = self.get_server_capabilities(server_id).await?;
+        
+        let (level, message, estimated_impact) = match operation {
+            "KEYS" => {
+                if capabilities.total_keys > 10000 {
+                    ("critical", 
+                     format!("KEYS command will scan {} keys and block Redis. Use SCAN instead.", capabilities.total_keys),
+                     "High - Server will be unresponsive during execution")
+                } else if capabilities.total_keys > 1000 {
+                    ("warning",
+                     format!("KEYS will scan {} keys. Consider using SCAN for production.", capabilities.total_keys),
+                     "Medium - Brief latency spike expected")
+                } else {
+                    ("info",
+                     "KEYS command is safe for small datasets.".to_string(),
+                     "Low - Minimal impact expected")
+                }
+            }
+            "SCAN" => {
+                ("info",
+                 "SCAN is production-safe. It iterates incrementally without blocking.".to_string(),
+                 "Minimal - Non-blocking cursor-based iteration")
+            }
+            "SMEMBERS" | "HGETALL" | "LRANGE" => {
+                ("warning",
+                 format!("{} fetches all elements. For large collections, consider pagination.", operation),
+                 "Variable - Depends on collection size")
+            }
+            "FLUSHDB" | "FLUSHALL" => {
+                ("critical",
+                 "This operation will DELETE ALL DATA. Cannot be undone!".to_string(),
+                 "Critical - All data will be lost")
+            }
+            "DEBUG" => {
+                ("critical",
+                 "DEBUG commands can crash or hang the server.".to_string(),
+                 "Critical - May cause server instability")
+            }
+            _ => {
+                ("info",
+                 format!("{} operation", operation),
+                 "Unknown - Check Redis documentation")
+            }
+        };
+
+        Ok(PerformanceWarning {
+            level: level.to_string(),
+            message: message.to_string(),
+            command: format!("{} {}", operation, pattern),
+            estimated_impact: estimated_impact.to_string(),
+        })
+    }
+
+    pub async fn delete_key(&self, server_id: &str, key: &str) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let result: i64 = redis::cmd("DEL")
+            .arg(key)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(result > 0)
+    }
+
+    pub async fn set_key_ttl(&self, server_id: &str, key: &str, ttl: i64) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let result: i64 = if ttl < 0 {
+            redis::cmd("PERSIST")
+                .arg(key)
+                .query_async(&mut redis_conn.conn)
+                .await
+                .map_err(|e| e.to_string())?
+        } else {
+            redis::cmd("EXPIRE")
+                .arg(key)
+                .arg(ttl)
+                .query_async(&mut redis_conn.conn)
+                .await
+                .map_err(|e| e.to_string())?
+        };
+
+        Ok(result > 0)
+    }
+
+    pub async fn execute_command(&self, server_id: &str, command: &str) -> Result<CommandResult, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        if parts.is_empty() {
+            return Err("Empty command".to_string());
+        }
+
+        let start = std::time::Instant::now();
+        let mut cmd = redis::cmd(parts[0]);
+        for arg in &parts[1..] {
+            cmd.arg(*arg);
+        }
+
+        let result: Result<redis::Value, _> = cmd.query_async(&mut redis_conn.conn).await;
+        let execution_time_ms = start.elapsed().as_millis() as u64;
+
+        match result {
+            Ok(value) => Ok(CommandResult {
+                success: true,
+                result: format_redis_value(&value),
+                execution_time_ms,
+                error: None,
+            }),
+            Err(e) => Ok(CommandResult {
+                success: false,
+                result: String::new(),
+                execution_time_ms,
+                error: Some(e.to_string()),
+            }),
+        }
+    }
+
+    pub async fn set_string(&self, server_id: &str, key: &str, value: &str, ttl: Option<i64>) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let mut cmd = redis::cmd("SET");
+        cmd.arg(key).arg(value);
+        if let Some(t) = ttl {
+            if t > 0 {
+                cmd.arg("EX").arg(t);
+            }
+        }
+
+        let _: String = cmd.query_async(&mut redis_conn.conn).await.map_err(|e| e.to_string())?;
+        Ok(true)
+    }
+
+    pub async fn hash_set(&self, server_id: &str, key: &str, field: &str, value: &str) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let _: i64 = redis::cmd("HSET")
+            .arg(key).arg(field).arg(value)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(true)
+    }
+
+    pub async fn hash_delete(&self, server_id: &str, key: &str, field: &str) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let result: i64 = redis::cmd("HDEL")
+            .arg(key).arg(field)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result > 0)
+    }
+
+    pub async fn list_push(&self, server_id: &str, key: &str, value: &str, position: &str) -> Result<i64, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let cmd = if position == "left" { "LPUSH" } else { "RPUSH" };
+        let result: i64 = redis::cmd(cmd)
+            .arg(key).arg(value)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result)
+    }
+
+    pub async fn list_remove(&self, server_id: &str, key: &str, index: i64) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let placeholder = "__DELETED__";
+        let _: () = redis::cmd("LSET")
+            .arg(key).arg(index).arg(placeholder)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+        let _: i64 = redis::cmd("LREM")
+            .arg(key).arg(1).arg(placeholder)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(true)
+    }
+
+    pub async fn set_add(&self, server_id: &str, key: &str, member: &str) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let result: i64 = redis::cmd("SADD")
+            .arg(key).arg(member)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result > 0)
+    }
+
+    pub async fn set_remove(&self, server_id: &str, key: &str, member: &str) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let result: i64 = redis::cmd("SREM")
+            .arg(key).arg(member)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result > 0)
+    }
+
+    pub async fn zset_add(&self, server_id: &str, key: &str, score: f64, member: &str) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let result: i64 = redis::cmd("ZADD")
+            .arg(key).arg(score).arg(member)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result >= 0)
+    }
+
+    pub async fn zset_remove(&self, server_id: &str, key: &str, member: &str) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let result: i64 = redis::cmd("ZREM")
+            .arg(key).arg(member)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result > 0)
+    }
+
+    pub async fn bulk_delete(&self, server_id: &str, pattern: &str) -> Result<BulkDeleteResult, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let start = std::time::Instant::now();
+        let mut deleted_count = 0u64;
+        let mut failed_count = 0u64;
+        let mut errors = Vec::new();
+        let mut cursor = "0".to_string();
+
+        loop {
+            let (new_cursor, keys): (String, Vec<String>) = redis::cmd("SCAN")
+                .arg(&cursor)
+                .arg("MATCH").arg(pattern)
+                .arg("COUNT").arg(100)
+                .query_async(&mut redis_conn.conn)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            for key in keys {
+                match redis::cmd("DEL").arg(&key).query_async::<i64>(&mut redis_conn.conn).await {
+                    Ok(n) => deleted_count += n as u64,
+                    Err(e) => {
+                        failed_count += 1;
+                        if errors.len() < 10 {
+                            errors.push(format!("{}: {}", key, e));
+                        }
+                    }
+                }
+            }
+
+            cursor = new_cursor;
+            if cursor == "0" {
+                break;
+            }
+        }
+
+        Ok(BulkDeleteResult {
+            deleted_count,
+            failed_count,
+            execution_time_ms: start.elapsed().as_millis() as u64,
+            errors,
+        })
+    }
+
+    pub async fn analyze_database(&self, server_id: &str, sample_size: u32) -> Result<DatabaseAnalysis, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let mut type_counts: HashMap<String, u64> = HashMap::new();
+        let mut type_memory: HashMap<String, u64> = HashMap::new();
+        let mut namespaces: HashMap<String, (u64, u64)> = HashMap::new();
+        let mut top_keys: Vec<KeyMemoryInfo> = Vec::new();
+        let mut keys_with_ttl = 0u64;
+        let mut keys_without_ttl = 0u64;
+        let mut expiring_1h = 0u64;
+        let mut expiring_24h = 0u64;
+        let mut expiring_7d = 0u64;
+        let mut memory_1h = 0u64;
+        let mut memory_24h = 0u64;
+        let mut total_memory = 0u64;
+        let mut cursor = "0".to_string();
+        let mut sampled = 0u32;
+
+        while sampled < sample_size {
+            let (new_cursor, keys): (String, Vec<String>) = redis::cmd("SCAN")
+                .arg(&cursor)
+                .arg("COUNT").arg(100)
+                .query_async(&mut redis_conn.conn)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            for key in keys {
+                if sampled >= sample_size { break; }
+                sampled += 1;
+
+                let key_type: String = redis::cmd("TYPE").arg(&key)
+                    .query_async(&mut redis_conn.conn).await.unwrap_or_else(|_| "unknown".to_string());
+
+                let ttl: i64 = redis::cmd("TTL").arg(&key)
+                    .query_async(&mut redis_conn.conn).await.unwrap_or(-1);
+
+                let mem: u64 = redis::cmd("MEMORY").arg("USAGE").arg(&key).arg("SAMPLES").arg(0)
+                    .query_async(&mut redis_conn.conn).await.unwrap_or(0);
+
+                *type_counts.entry(key_type.clone()).or_insert(0) += 1;
+                *type_memory.entry(key_type.clone()).or_insert(0) += mem;
+                total_memory += mem;
+
+                if ttl > 0 {
+                    keys_with_ttl += 1;
+                    if ttl <= 3600 { expiring_1h += 1; memory_1h += mem; }
+                    if ttl <= 86400 { expiring_24h += 1; memory_24h += mem; }
+                    if ttl <= 604800 { expiring_7d += 1; }
+                } else {
+                    keys_without_ttl += 1;
+                }
+
+                let ns = key.split(':').next().unwrap_or(&key).to_string();
+                let entry = namespaces.entry(ns).or_insert((0, 0));
+                entry.0 += 1;
+                entry.1 += mem;
+
+                top_keys.push(KeyMemoryInfo { key: key.clone(), key_type, memory_bytes: mem, ttl });
+            }
+
+            cursor = new_cursor;
+            if cursor == "0" { break; }
+        }
+
+        top_keys.sort_by(|a, b| b.memory_bytes.cmp(&a.memory_bytes));
+        top_keys.truncate(20);
+
+        let total_keys = sampled as u64;
+        let type_distribution: Vec<TypeDistribution> = type_counts.iter()
+            .map(|(t, c)| TypeDistribution {
+                key_type: t.clone(),
+                count: *c,
+                percentage: if total_keys > 0 { (*c as f64 / total_keys as f64) * 100.0 } else { 0.0 },
+            }).collect();
+
+        let memory_by_type: Vec<TypeMemory> = type_memory.iter()
+            .map(|(t, m)| TypeMemory {
+                key_type: t.clone(),
+                memory_bytes: *m,
+                percentage: if total_memory > 0 { (*m as f64 / total_memory as f64) * 100.0 } else { 0.0 },
+            }).collect();
+
+        let mut ns_vec: Vec<NamespaceInfo> = namespaces.iter()
+            .map(|(n, (c, m))| NamespaceInfo { namespace: n.clone(), key_count: *c, memory_bytes: *m })
+            .collect();
+        ns_vec.sort_by(|a, b| b.memory_bytes.cmp(&a.memory_bytes));
+        ns_vec.truncate(20);
+
+        let mut recommendations = Vec::new();
+        if keys_without_ttl > keys_with_ttl {
+            recommendations.push("Consider setting TTL on keys to prevent memory growth".to_string());
+        }
+        if let Some(top) = top_keys.first() {
+            if top.memory_bytes > 1024 * 1024 {
+                recommendations.push(format!("Large key detected: {} ({} MB)", top.key, top.memory_bytes / (1024 * 1024)));
+            }
+        }
+
+        Ok(DatabaseAnalysis {
+            total_keys,
+            total_memory,
+            type_distribution,
+            memory_by_type,
+            expiry_analysis: ExpiryAnalysis {
+                keys_with_ttl,
+                keys_without_ttl,
+                expiring_in_1h: expiring_1h,
+                expiring_in_24h: expiring_24h,
+                expiring_in_7d: expiring_7d,
+                memory_to_free_1h: memory_1h,
+                memory_to_free_24h: memory_24h,
+            },
+            top_keys_by_memory: top_keys,
+            namespaces: ns_vec,
+            recommendations,
+        })
+    }
+
+    pub async fn analyze_clients(&self, server_id: &str) -> Result<ClientAnalysis, String> {
+        let clients = self.get_clients(server_id).await?;
+        
+        let mut idle_clients = Vec::new();
+        let mut high_memory_clients = Vec::new();
+        let mut command_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut suspicious_patterns = Vec::new();
+        let mut anomalies = Vec::new();
+
+        let mut connect_only = Vec::new();
+        let mut high_idle = Vec::new();
+
+        for client in &clients {
+            if client.idle > 300 {
+                idle_clients.push(IdleClient {
+                    id: client.id.clone(),
+                    addr: client.addr.clone(),
+                    idle_seconds: client.idle,
+                    last_command: client.cmd.clone(),
+                    connected_seconds: client.age,
+                });
+                high_idle.push(client.addr.clone());
+            }
+
+            if client.qbuf > 1024 * 1024 || client.obl > 1024 * 1024 {
+                high_memory_clients.push(ClientMemoryInfo {
+                    id: client.id.clone(),
+                    addr: client.addr.clone(),
+                    output_buffer_bytes: client.obl,
+                    query_buffer_bytes: client.qbuf,
+                });
+            }
+
+            command_map.entry(client.cmd.clone()).or_default().push(client.ip.clone());
+
+            if client.cmd == "NULL" || client.cmd.is_empty() {
+                connect_only.push(client.addr.clone());
+            }
+
+            if client.age > 0 && client.idle as f64 / client.age as f64 > 0.95 {
+                anomalies.push(ClientAnomaly {
+                    anomaly_type: "Mostly Idle".to_string(),
+                    client_addr: client.addr.clone(),
+                    details: format!("Client idle {}% of connection time", (client.idle as f64 / client.age as f64 * 100.0) as u32),
+                    severity: "warning".to_string(),
+                });
+            }
+        }
+
+        if !connect_only.is_empty() {
+            suspicious_patterns.push(SuspiciousPattern {
+                pattern_type: "Connect Only".to_string(),
+                severity: "warning".to_string(),
+                description: format!("{} clients connected but never executed commands", connect_only.len()),
+                affected_clients: connect_only.iter().take(10).cloned().collect(),
+                recommendation: "Check if these are health checks or misconfigured clients".to_string(),
+            });
+        }
+
+        if high_idle.len() > clients.len() / 2 && clients.len() > 5 {
+            suspicious_patterns.push(SuspiciousPattern {
+                pattern_type: "High Idle Rate".to_string(),
+                severity: "warning".to_string(),
+                description: format!("{}% of clients are idle for >5 minutes", (high_idle.len() * 100) / clients.len()),
+                affected_clients: high_idle.iter().take(10).cloned().collect(),
+                recommendation: "Consider connection pooling or reducing idle timeout".to_string(),
+            });
+        }
+
+        let clients_by_command: Vec<CommandClientInfo> = command_map.iter()
+            .map(|(cmd, ips)| CommandClientInfo {
+                command: cmd.clone(),
+                client_count: ips.len() as u64,
+                client_ips: ips.iter().take(10).cloned().collect(),
+            })
+            .collect();
+
+        Ok(ClientAnalysis {
+            total_clients: clients.len() as u64,
+            idle_clients,
+            high_memory_clients,
+            clients_by_command,
+            suspicious_patterns,
+            anomalies,
+        })
+    }
+
+    pub async fn rename_key(&self, server_id: &str, old_key: &str, new_key: &str) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let _: () = redis::cmd("RENAME")
+            .arg(old_key).arg(new_key)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(true)
+    }
+
+    pub async fn copy_key(&self, server_id: &str, source: &str, dest: &str) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        let result: i64 = redis::cmd("COPY")
+            .arg(source).arg(dest)
+            .query_async(&mut redis_conn.conn)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result > 0)
+    }
+}
+
+fn format_redis_value(value: &redis::Value) -> String {
+    match value {
+        redis::Value::Nil => "(nil)".to_string(),
+        redis::Value::Int(i) => format!("(integer) {}", i),
+        redis::Value::BulkString(s) => String::from_utf8_lossy(s).to_string(),
+        redis::Value::Array(arr) => {
+            let items: Vec<String> = arr.iter().enumerate()
+                .map(|(i, v)| format!("{}) {}", i + 1, format_redis_value(v)))
+                .collect();
+            items.join("\n")
+        }
+        redis::Value::SimpleString(s) => s.clone(),
+        redis::Value::Okay => "OK".to_string(),
+        redis::Value::Map(map) => {
+            let items: Vec<String> = map.iter()
+                .map(|(k, v)| format!("{}: {}", format_redis_value(k), format_redis_value(v)))
+                .collect();
+            items.join("\n")
+        }
+        redis::Value::Set(set) => {
+            let items: Vec<String> = set.iter()
+                .map(|v| format_redis_value(v))
+                .collect();
+            items.join("\n")
+        }
+        redis::Value::Double(d) => format!("(double) {}", d),
+        redis::Value::Boolean(b) => format!("(boolean) {}", b),
+        redis::Value::VerbatimString { format: _, text } => text.clone(),
+        redis::Value::BigNumber(n) => format!("(big number) {}", n),
+        redis::Value::Push { kind: _, data } => {
+            let items: Vec<String> = data.iter().map(|v| format_redis_value(v)).collect();
+            items.join("\n")
+        }
+        redis::Value::ServerError(e) => format!("(error) {}", e.details().unwrap_or("Unknown error")),
+        redis::Value::Attribute { data, attributes: _ } => format_redis_value(data),
+    }
+}
+
+fn parse_stream_entries(entries: &[redis::Value]) -> Vec<StreamEntry> {
+    entries.iter().filter_map(|entry| {
+        if let redis::Value::Array(parts) = entry {
+            let id = match parts.get(0) {
+                Some(redis::Value::BulkString(s)) => String::from_utf8_lossy(s).to_string(),
+                _ => return None,
+            };
+            let fields = match parts.get(1) {
+                Some(redis::Value::Array(field_values)) => {
+                    let mut map = HashMap::new();
+                    let mut iter = field_values.iter();
+                    while let (Some(k), Some(v)) = (iter.next(), iter.next()) {
+                        if let (redis::Value::BulkString(key), redis::Value::BulkString(val)) = (k, v) {
+                            map.insert(
+                                String::from_utf8_lossy(key).to_string(),
+                                String::from_utf8_lossy(val).to_string(),
+                            );
+                        }
+                    }
+                    map
+                }
+                _ => HashMap::new(),
+            };
+            Some(StreamEntry { id, fields })
+        } else {
+            None
+        }
+    }).collect()
 }
 
 fn parse_redis_info(info: &str) -> Result<RedisInfo, String> {
