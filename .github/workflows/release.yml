@@ -81,7 +81,7 @@ jobs:
         run: npm ci
 
       - name: Build Tauri app
-        run: npm run tauri build ${{ matrix.args }}
+        run: npm run tauri build -- ${{ matrix.args }}
 
       - name: Ad-hoc sign macOS app
         if: matrix.platform == 'macos-latest'
