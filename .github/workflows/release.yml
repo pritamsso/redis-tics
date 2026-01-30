@@ -4,16 +4,85 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  create-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create_release.outputs.id }}
+      release_upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from Cargo.toml
+        id: get_version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the last tag or use initial commit
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          
+          echo "## What's Changed" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          
+          # Get commit messages since last tag
+          git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges >> RELEASE_NOTES.md || echo "- Initial release" >> RELEASE_NOTES.md
+          
+          echo "" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "## Downloads" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "| Platform | Architecture | File |" >> RELEASE_NOTES.md
+          echo "|----------|--------------|------|" >> RELEASE_NOTES.md
+          echo "| macOS | Apple Silicon (M1/M2/M3) | \`.dmg\` |" >> RELEASE_NOTES.md
+          echo "| macOS | Intel | \`.dmg\` |" >> RELEASE_NOTES.md
+          echo "| Windows | x64 | \`.msi\` or \`.exe\` |" >> RELEASE_NOTES.md
+          echo "| Linux | x64 | \`.deb\` or \`.AppImage\` |" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "---" >> RELEASE_NOTES.md
+          echo "Made with ❤️ by [@pritamsso](https://github.com/pritamsso)" >> RELEASE_NOTES.md
+          
+          cat RELEASE_NOTES.md
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: Redis Tics v${{ steps.get_version.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          draft: true
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build:
+    needs: create-release
     permissions:
       contents: write
     strategy:
@@ -24,18 +93,22 @@ jobs:
             args: '--target aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'
             name: 'macOS-ARM64'
+            rust_target: 'aarch64-apple-darwin'
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
             target: 'x86_64-apple-darwin'
             name: 'macOS-Intel'
+            rust_target: 'x86_64-apple-darwin'
           - platform: 'ubuntu-22.04'
             args: ''
             target: ''
             name: 'Linux'
+            rust_target: ''
           - platform: 'windows-latest'
             args: ''
             target: ''
             name: 'Windows'
+            rust_target: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -55,9 +128,11 @@ jobs:
           cache: 'npm'
 
       - name: Install Rust stable
-        uses: dtolnay/rust-action@stable
-        with:
-          targets: ${{ matrix.target }}
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust target
+        if: matrix.rust_target != ''
+        run: rustup target add ${{ matrix.rust_target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -71,29 +146,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'Redis Tics v__VERSION__'
-          releaseBody: |
-            ## Redis Tics v__VERSION__
-            
-            A powerful Redis analytics and monitoring dashboard.
-            
-            ### Downloads
-            - **macOS (Apple Silicon)**: `.dmg` file for M1/M2/M3 Macs
-            - **macOS (Intel)**: `.dmg` file for Intel Macs
-            - **Windows**: `.msi` installer or `.exe`
-            - **Linux**: `.deb` or `.AppImage`
-            
-            ### What's New
-            See the [CHANGELOG](https://github.com/pritamsso/redis-tics/blob/main/CHANGELOG.md) for details.
-            
-            ---
-            Made with ❤️ by [@pritamsso](https://github.com/pritamsso)
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
 
       - name: Upload artifacts
@@ -110,3 +164,17 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app
           retention-days: 5
+
+  publish-release:
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.create-release.outputs.version }}
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

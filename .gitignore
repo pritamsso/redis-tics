@@ -16,8 +16,7 @@ node_modules/
 .vscode/launch.json
 .vscode/tasks.json
 
-# npm, yarn and bun lock files
-package-lock.json
+# yarn and bun lock files (keep package-lock.json for CI)
 yarn.lock
 bun.lockb
 
