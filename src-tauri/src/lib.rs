@@ -78,6 +78,22 @@ async fn get_advanced_analytics(
 }
 
 #[tauri::command]
+async fn get_memory_analytics(
+    state: tauri::State<'_, Arc<RedisManager>>,
+    server_id: String,
+) -> Result<(Option<MemoryStats>, Option<String>), String> {
+    state.get_memory_analytics(&server_id).await
+}
+
+#[tauri::command]
+async fn get_latency_analytics(
+    state: tauri::State<'_, Arc<RedisManager>>,
+    server_id: String,
+) -> Result<Option<String>, String> {
+    state.get_latency_analytics(&server_id).await
+}
+
+#[tauri::command]
 async fn get_slow_log(
     state: tauri::State<'_, Arc<RedisManager>>,
     server_id: String,
@@ -326,6 +342,8 @@ pub fn run() {
             start_monitor,
             stop_monitor,
             get_advanced_analytics,
+            get_memory_analytics,
+            get_latency_analytics,
             get_slow_log,
             get_command_stats,
             encrypt_server_password,

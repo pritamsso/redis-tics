@@ -330,26 +330,21 @@ impl RedisManager {
     pub async fn get_advanced_analytics(&self, server_id: &str) -> Result<AdvancedAnalytics, String> {
         let sid = server_id.to_string();
         
+        // Fast analytics - only use INFO commands which are very fast
         let (
-            memory_stats,
-            memory_doctor,
             slow_log,
             command_stats,
             cluster_info,
             persistence,
             cpu_stats,
             error_stats,
-            latency_doctor,
         ) = tokio::join!(
-            self.get_memory_stats(&sid),
-            self.get_memory_doctor(&sid),
-            self.get_slow_log(&sid, 50),
+            self.get_slow_log(&sid, 20),  // Reduced from 50 to 20 for speed
             self.get_command_stats(&sid),
             self.get_cluster_info(&sid),
             self.get_persistence_info(&sid),
             self.get_cpu_stats(&sid),
             self.get_error_stats(&sid),
-            self.get_latency_doctor(&sid),
         );
 
         let cluster_nodes = match &cluster_info {
@@ -358,8 +353,8 @@ impl RedisManager {
         };
 
         Ok(AdvancedAnalytics {
-            memory_stats: memory_stats.ok(),
-            memory_doctor: memory_doctor.ok(),
+            memory_stats: None,  // Loaded separately on demand
+            memory_doctor: None, // Loaded separately on demand
             slow_log: slow_log.unwrap_or_default(),
             command_stats: command_stats.unwrap_or_default(),
             cluster_info: cluster_info.unwrap_or(None),
@@ -367,8 +362,21 @@ impl RedisManager {
             persistence: persistence.ok(),
             cpu_stats: cpu_stats.ok(),
             error_stats: error_stats.unwrap_or_default(),
-            latency_doctor: latency_doctor.ok(),
+            latency_doctor: None, // Loaded separately on demand
         })
+    }
+
+    pub async fn get_memory_analytics(&self, server_id: &str) -> Result<(Option<MemoryStats>, Option<String>), String> {
+        let sid = server_id.to_string();
+        let (memory_stats, memory_doctor) = tokio::join!(
+            self.get_memory_stats(&sid),
+            self.get_memory_doctor(&sid),
+        );
+        Ok((memory_stats.ok(), memory_doctor.ok()))
+    }
+
+    pub async fn get_latency_analytics(&self, server_id: &str) -> Result<Option<String>, String> {
+        self.get_latency_doctor(server_id).await.map(Some)
     }
 
     pub async fn scan_keys(&self, server_id: &str, pattern: &str, cursor: &str, count: u32) -> Result<KeyScanResult, String> {

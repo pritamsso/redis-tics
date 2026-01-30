@@ -13,7 +13,7 @@ import { UpdateNotification } from "@/components/UpdateNotification";
 import { AboutDialog } from "@/components/AboutDialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Database, Key, Terminal, BarChart3, LayoutDashboard } from "lucide-react";
+import { RefreshCw, Database, Key, Terminal, BarChart3, LayoutDashboard, Users, Activity, Server } from "lucide-react";
 import { useRedis } from "@/hooks/useRedis";
 
 function App() {
@@ -101,30 +101,33 @@ function App() {
                   </div>
                   <div className="h-8 w-px bg-border" />
                   <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="bg-secondary/50">
-                      <TabsTrigger value="dashboard" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                        <LayoutDashboard className="h-3.5 w-3.5" />
+                    <TabsList className="bg-secondary/80 p-1 gap-1">
+                      <TabsTrigger value="dashboard" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                        <LayoutDashboard className="h-4 w-4" />
                         Dashboard
                       </TabsTrigger>
-                      <TabsTrigger value="keys" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                        <Key className="h-3.5 w-3.5" />
+                      <TabsTrigger value="keys" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                        <Key className="h-4 w-4" />
                         Keys
                       </TabsTrigger>
-                      <TabsTrigger value="cli" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                        <Terminal className="h-3.5 w-3.5" />
+                      <TabsTrigger value="cli" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                        <Terminal className="h-4 w-4" />
                         CLI
                       </TabsTrigger>
-                      <TabsTrigger value="db-analysis" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                        <BarChart3 className="h-3.5 w-3.5" />
+                      <TabsTrigger value="db-analysis" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                        <BarChart3 className="h-4 w-4" />
                         Analysis
                       </TabsTrigger>
-                      <TabsTrigger value="clients" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      <TabsTrigger value="clients" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                        <Users className="h-4 w-4" />
                         Clients
                       </TabsTrigger>
-                      <TabsTrigger value="monitor" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      <TabsTrigger value="monitor" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                        <Activity className="h-4 w-4" />
                         Monitor
                       </TabsTrigger>
-                      <TabsTrigger value="info" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      <TabsTrigger value="info" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                        <Server className="h-4 w-4" />
                         Info
                       </TabsTrigger>
                     </TabsList>
