@@ -7,6 +7,32 @@
       "title": "Redis Tics v1.0.1",
       "description": "New release of Redis Tics",
       "changes": [
+        "Auto publish release to the docs site",
+        "chore: update releases.json for v1.0.1",
+        "feat: Charts, Memory Usage, Icons and links fixes",
+        "chore: update releases.json for v1.0.0",
+        "Feat: Updates, security , Dashboard and more",
+        "updated github pages",
+        "Create CNAME",
+        "fix: the build issues",
+        "fix: Githib action build errors",
+        "fix: Blank Screen"
+      ],
+      "downloads": {
+        "macos_arm": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.1/Redis.Tics_1.0.1_aarch64.dmg",
+        "macos_intel": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.1/Redis.Tics_1.0.1_x64.dmg",
+        "windows_msi": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.1/Redis.Tics_1.0.1_x64-setup.msi",
+        "windows_exe": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.1/Redis.Tics_1.0.1_x64-setup.exe",
+        "linux_deb": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.1/redis-tics_1.0.1_amd64.deb",
+        "linux_appimage": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.1/Redis.Tics_1.0.1_amd64.AppImage"
+      }
+    },
+    {
+      "version": "1.0.1",
+      "date": "2026-01-30",
+      "title": "Redis Tics v1.0.1",
+      "description": "New release of Redis Tics",
+      "changes": [
         "feat: Charts, Memory Usage, Icons and links fixes",
         "chore: update releases.json for v1.0.0",
         "Feat: Updates, security , Dashboard and more",
