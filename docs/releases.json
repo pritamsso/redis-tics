@@ -7,6 +7,7 @@
       "title": "Redis Tics v1.0.1",
       "description": "New release of Redis Tics with improvements and fixes",
       "changes": [
+        "fix:redis perf optimization",
         "fix the rebase and push for release.json",
         "Resovle github action fixes",
         "fix: performanance fixes",
