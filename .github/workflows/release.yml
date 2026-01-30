@@ -16,73 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  create-release:
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    outputs:
-      release_id: ${{ steps.create_release.outputs.id }}
-      release_upload_url: ${{ steps.create_release.outputs.upload_url }}
-      version: ${{ steps.get_version.outputs.version }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get version from Cargo.toml
-        id: get_version
-        run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
-
-      - name: Generate changelog
-        id: changelog
-        run: |
-          # Get the last tag or use initial commit
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
-          
-          echo "## What's Changed" > RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          
-          # Get commit messages since last tag
-          git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges >> RELEASE_NOTES.md || echo "- Initial release" >> RELEASE_NOTES.md
-          
-          echo "" >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "## Downloads" >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "| Platform | Architecture | File |" >> RELEASE_NOTES.md
-          echo "|----------|--------------|------|" >> RELEASE_NOTES.md
-          echo "| macOS | Apple Silicon (M1/M2/M3) | \`.dmg\` |" >> RELEASE_NOTES.md
-          echo "| macOS | Intel | \`.dmg\` |" >> RELEASE_NOTES.md
-          echo "| Windows | x64 | \`.msi\` or \`.exe\` |" >> RELEASE_NOTES.md
-          echo "| Linux | x64 | \`.deb\` or \`.AppImage\` |" >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "---" >> RELEASE_NOTES.md
-          echo "Made with ❤️ by [@pritamsso](https://github.com/pritamsso)" >> RELEASE_NOTES.md
-          
-          cat RELEASE_NOTES.md
-
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ steps.get_version.outputs.version }}
-          name: Redis Tics v${{ steps.get_version.outputs.version }}
-          body_path: RELEASE_NOTES.md
-          draft: true
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build:
-    needs: create-release
     permissions:
       contents: write
     strategy:
@@ -94,21 +28,25 @@ jobs:
             target: 'aarch64-apple-darwin'
             name: 'macOS-ARM64'
             rust_target: 'aarch64-apple-darwin'
+            bundle_path: 'src-tauri/target/aarch64-apple-darwin/release/bundle'
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
             target: 'x86_64-apple-darwin'
             name: 'macOS-Intel'
             rust_target: 'x86_64-apple-darwin'
+            bundle_path: 'src-tauri/target/x86_64-apple-darwin/release/bundle'
           - platform: 'ubuntu-22.04'
             args: ''
             target: ''
             name: 'Linux'
             rust_target: ''
+            bundle_path: 'src-tauri/target/release/bundle'
           - platform: 'windows-latest'
             args: ''
             target: ''
             name: 'Windows'
             rust_target: ''
+            bundle_path: 'src-tauri/target/release/bundle'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -143,38 +81,149 @@ jobs:
         run: npm ci
 
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: ${{ matrix.args }}
+        run: npm run tauri build ${{ matrix.args }}
 
-      - name: Upload artifacts
+      - name: Ad-hoc sign macOS app
+        if: matrix.platform == 'macos-latest'
+        run: |
+          # Find and ad-hoc sign the app bundle to reduce Gatekeeper issues
+          APP_PATH=$(find ${{ matrix.bundle_path }} -name "*.app" -type d | head -1)
+          if [ -n "$APP_PATH" ]; then
+            echo "Ad-hoc signing: $APP_PATH"
+            codesign --force --deep --sign - "$APP_PATH" || echo "Ad-hoc signing skipped"
+          fi
+
+      - name: List built files (debug)
+        shell: bash
+        run: |
+          echo "=== Bundle directory contents ==="
+          find ${{ matrix.bundle_path }} -type f 2>/dev/null || echo "Bundle path not found"
+
+      - name: Upload macOS DMG
+        if: matrix.platform == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: redis-tics-${{ matrix.name }}
-          path: |
-            src-tauri/target/release/bundle/**/*.dmg
-            src-tauri/target/release/bundle/**/*.app
-            src-tauri/target/release/bundle/**/*.deb
-            src-tauri/target/release/bundle/**/*.AppImage
-            src-tauri/target/release/bundle/**/*.msi
-            src-tauri/target/release/bundle/**/*.exe
-            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
-            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app
-          retention-days: 5
+          name: redis-tics-${{ matrix.name }}-dmg
+          path: ${{ matrix.bundle_path }}/dmg/*.dmg
+          if-no-files-found: warn
 
-  publish-release:
-    needs: [create-release, build]
+      - name: Upload Linux DEB
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: redis-tics-${{ matrix.name }}-deb
+          path: ${{ matrix.bundle_path }}/deb/*.deb
+          if-no-files-found: warn
+
+      - name: Upload Linux AppImage
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: redis-tics-${{ matrix.name }}-appimage
+          path: ${{ matrix.bundle_path }}/appimage/*.AppImage
+          if-no-files-found: warn
+
+      - name: Upload Windows MSI
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: redis-tics-${{ matrix.name }}-msi
+          path: ${{ matrix.bundle_path }}/msi/*.msi
+          if-no-files-found: warn
+
+      - name: Upload Windows NSIS
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: redis-tics-${{ matrix.name }}-nsis
+          path: ${{ matrix.bundle_path }}/nsis/*.exe
+          if-no-files-found: warn
+
+  release:
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Publish release
-        uses: softprops/action-gh-release@v1
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          tag_name: v${{ needs.create-release.outputs.version }}
+          fetch-depth: 0
+
+      - name: Get version from Cargo.toml
+        id: get_version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List downloaded artifacts
+        run: |
+          echo "=== All downloaded artifacts ==="
+          find artifacts -type f
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          
+          # Copy and rename files for clarity
+          find artifacts -name "*.dmg" -exec cp {} release-files/ \;
+          find artifacts -name "*.deb" -exec cp {} release-files/ \;
+          find artifacts -name "*.AppImage" -exec cp {} release-files/ \;
+          find artifacts -name "*.msi" -exec cp {} release-files/ \;
+          find artifacts -name "*.exe" -exec cp {} release-files/ \;
+          
+          echo "=== Files to release ==="
+          ls -la release-files/
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          echo "## What's Changed" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          
+          if [ -n "$LAST_TAG" ]; then
+            git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges >> RELEASE_NOTES.md
+          else
+            echo "- Initial release 🎉" >> RELEASE_NOTES.md
+          fi
+          
+          echo "" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "## Downloads" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "| Platform | Architecture | File |" >> RELEASE_NOTES.md
+          echo "|----------|--------------|------|" >> RELEASE_NOTES.md
+          echo "| macOS | Apple Silicon (M1/M2/M3) | \`Redis Tics_*.dmg\` (aarch64) |" >> RELEASE_NOTES.md
+          echo "| macOS | Intel | \`Redis Tics_*.dmg\` (x86_64) |" >> RELEASE_NOTES.md
+          echo "| Windows | x64 | \`.msi\` or \`.exe\` |" >> RELEASE_NOTES.md
+          echo "| Linux | x64 | \`.deb\` or \`.AppImage\` |" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "---" >> RELEASE_NOTES.md
+          echo "Made with ❤️ by [@pritamsso](https://github.com/pritamsso)" >> RELEASE_NOTES.md
+          
+          cat RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: Redis Tics v${{ steps.get_version.outputs.version }}
+          body_path: RELEASE_NOTES.md
           draft: false
+          prerelease: false
+          files: release-files/*
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
