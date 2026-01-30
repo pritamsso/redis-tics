@@ -77,6 +77,42 @@ cargo tauri build
 ### Download Pre-built Binaries
 Download the latest release for your platform from the [Releases](https://github.com/pritamsso/redis-tics/releases) page.
 
+#### macOS Installation Note ⚠️
+
+Since the app is not signed with an Apple Developer certificate, macOS Gatekeeper may show **"Redis Tics is damaged and can't be opened"** error.
+
+**To fix this, run one of these commands in Terminal:**
+
+```bash
+# If you installed to Applications:
+xattr -cr /Applications/Redis\ Tics.app
+
+# Or for the downloaded DMG file:
+xattr -cr ~/Downloads/Redis\ Tics*.dmg
+```
+
+Then open the app normally. This removes the quarantine attribute that macOS adds to downloaded files.
+
+**Alternative method:**
+1. Right-click (or Control-click) the app
+2. Select "Open" from the context menu
+3. Click "Open" in the dialog that appears
+
+#### Linux Installation
+
+```bash
+# For .deb (Ubuntu/Debian):
+sudo dpkg -i redis-tics_*.deb
+
+# For .AppImage:
+chmod +x Redis_Tics*.AppImage
+./Redis_Tics*.AppImage
+```
+
+#### Windows Installation
+
+Run the `.msi` installer or the `.exe` (NSIS installer). If Windows SmartScreen appears, click "More info" → "Run anyway".
+
 ## 🖼️ Screenshots
 
 <details>
