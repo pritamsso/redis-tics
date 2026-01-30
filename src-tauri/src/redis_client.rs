@@ -328,32 +328,46 @@ impl RedisManager {
     }
 
     pub async fn get_advanced_analytics(&self, server_id: &str) -> Result<AdvancedAnalytics, String> {
-        let memory_stats = self.get_memory_stats(server_id).await.ok();
-        let memory_doctor = self.get_memory_doctor(server_id).await.ok();
-        let slow_log = self.get_slow_log(server_id, 50).await.unwrap_or_default();
-        let command_stats = self.get_command_stats(server_id).await.unwrap_or_default();
-        let cluster_info = self.get_cluster_info(server_id).await.unwrap_or(None);
-        let cluster_nodes = if cluster_info.is_some() {
-            self.get_cluster_nodes(server_id).await.unwrap_or_default()
-        } else {
-            vec![]
-        };
-        let persistence = self.get_persistence_info(server_id).await.ok();
-        let cpu_stats = self.get_cpu_stats(server_id).await.ok();
-        let error_stats = self.get_error_stats(server_id).await.unwrap_or_default();
-        let latency_doctor = self.get_latency_doctor(server_id).await.ok();
-
-        Ok(AdvancedAnalytics {
+        let sid = server_id.to_string();
+        
+        let (
             memory_stats,
             memory_doctor,
             slow_log,
             command_stats,
             cluster_info,
-            cluster_nodes,
             persistence,
             cpu_stats,
             error_stats,
             latency_doctor,
+        ) = tokio::join!(
+            self.get_memory_stats(&sid),
+            self.get_memory_doctor(&sid),
+            self.get_slow_log(&sid, 50),
+            self.get_command_stats(&sid),
+            self.get_cluster_info(&sid),
+            self.get_persistence_info(&sid),
+            self.get_cpu_stats(&sid),
+            self.get_error_stats(&sid),
+            self.get_latency_doctor(&sid),
+        );
+
+        let cluster_nodes = match &cluster_info {
+            Ok(Some(_)) => self.get_cluster_nodes(&sid).await.unwrap_or_default(),
+            _ => vec![],
+        };
+
+        Ok(AdvancedAnalytics {
+            memory_stats: memory_stats.ok(),
+            memory_doctor: memory_doctor.ok(),
+            slow_log: slow_log.unwrap_or_default(),
+            command_stats: command_stats.unwrap_or_default(),
+            cluster_info: cluster_info.unwrap_or(None),
+            cluster_nodes,
+            persistence: persistence.ok(),
+            cpu_stats: cpu_stats.ok(),
+            error_stats: error_stats.unwrap_or_default(),
+            latency_doctor: latency_doctor.ok(),
         })
     }
 

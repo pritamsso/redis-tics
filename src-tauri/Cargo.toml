@@ -33,6 +33,7 @@ tauri = { version = "2.9.5", features = ["tray-icon"] }
 tauri-plugin-log = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-shell = "2"
 redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }

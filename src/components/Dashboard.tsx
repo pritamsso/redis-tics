@@ -18,6 +18,16 @@ import {
   MemoryStick,
   Network,
 } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+} from "recharts";
 import type { RedisInfo } from "@/types";
 
 interface DashboardProps {
@@ -357,6 +367,112 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
             {renderMiniChart(history.map(h => h.hitRate), "rgb(249, 115, 22)")}
           </div>
         </div>
+
+        {history.length > 5 && (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl bg-card border">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <Zap className="h-4 w-4 text-green-500" />
+                Operations Over Time
+              </h3>
+              <div className="h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={history.slice(-30).map((h, i) => ({ ...h, time: i }))}>
+                    <defs>
+                      <linearGradient id="opsGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="time" hide />
+                    <YAxis hide domain={['auto', 'auto']} />
+                    <Tooltip 
+                      contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
+                      labelFormatter={() => ''}
+                      formatter={(value) => [`${Number(value).toLocaleString()} ops/sec`, 'Operations']}
+                    />
+                    <Area type="monotone" dataKey="opsPerSec" stroke="#22c55e" fill="url(#opsGradient)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-card border">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <MemoryStick className="h-4 w-4 text-blue-500" />
+                Memory Usage Over Time
+              </h3>
+              <div className="h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={history.slice(-30).map((h, i) => ({ ...h, time: i, memMB: h.usedMemory / (1024 * 1024) }))}>
+                    <defs>
+                      <linearGradient id="memGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="time" hide />
+                    <YAxis hide domain={['auto', 'auto']} />
+                    <Tooltip 
+                      contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
+                      labelFormatter={() => ''}
+                      formatter={(value) => [`${Number(value).toFixed(1)} MB`, 'Memory']}
+                    />
+                    <Area type="monotone" dataKey="memMB" stroke="#3b82f6" fill="url(#memGradient)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-card border">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <Users className="h-4 w-4 text-purple-500" />
+                Connected Clients Over Time
+              </h3>
+              <div className="h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={history.slice(-30).map((h, i) => ({ ...h, time: i }))}>
+                    <XAxis dataKey="time" hide />
+                    <YAxis hide domain={['auto', 'auto']} />
+                    <Tooltip 
+                      contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
+                      labelFormatter={() => ''}
+                      formatter={(value) => [`${Number(value)} clients`, 'Connected']}
+                    />
+                    <Line type="monotone" dataKey="connectedClients" stroke="#a855f7" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-card border">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <Gauge className="h-4 w-4 text-orange-500" />
+                Cache Hit Rate Over Time
+              </h3>
+              <div className="h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={history.slice(-30).map((h, i) => ({ ...h, time: i }))}>
+                    <defs>
+                      <linearGradient id="hitGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="time" hide />
+                    <YAxis hide domain={[0, 100]} />
+                    <Tooltip 
+                      contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
+                      labelFormatter={() => ''}
+                      formatter={(value) => [`${Number(value).toFixed(1)}%`, 'Hit Rate']}
+                    />
+                    <Area type="monotone" dataKey="hitRate" stroke="#f97316" fill="url(#hitGradient)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
 
         {issues.length > 0 && (
           <div className="space-y-3">
