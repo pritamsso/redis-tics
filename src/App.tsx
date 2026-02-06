@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { AddServerDialog } from "@/components/AddServerDialog";
+import { EditServerDialog } from "@/components/EditServerDialog";
+import type { RedisServer } from "@/types";
 import { ServerInfoPanel } from "@/components/ServerInfoPanel";
 import { ClientsPanel } from "@/components/ClientsPanel";
 import { MonitorPanel } from "@/components/MonitorPanel";
@@ -18,6 +20,8 @@ import { useRedis } from "@/hooks/useRedis";
 
 function App() {
   const [showAddServer, setShowAddServer] = useState(false);
+  const [showEditServer, setShowEditServer] = useState(false);
+  const [serverToEdit, setServerToEdit] = useState<RedisServer | null>(null);
   const [activeTab, setActiveTab] = useState("dashboard");
 
   const {
@@ -32,6 +36,7 @@ function App() {
     selectedIp,
     setSelectedIp,
     addServer,
+    updateServer,
     removeServer,
     connect,
     disconnect,
@@ -69,6 +74,10 @@ function App() {
         connectionStates={connectionStates}
         onSelectServer={handleSelectServer}
         onAddServer={() => setShowAddServer(true)}
+        onEditServer={(server) => {
+          setServerToEdit(server);
+          setShowEditServer(true);
+        }}
         onRemoveServer={removeServer}
         onConnect={connect}
         onDisconnect={disconnect}
@@ -95,38 +104,36 @@ function App() {
           <>
             <header className="border-b bg-card/50 backdrop-blur-sm">
               <div className="px-6 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-orange-500 rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-md">
-                    RT
-                  </div>
-                  <div className="h-8 w-px bg-border" />
+                <div className="flex items-center gap-4">
                   <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="bg-secondary/80 p-1 gap-1 border border-border rounded-lg">
-                      <TabsTrigger value="dashboard" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                    <TabsList className="bg-transparent p-0 gap-2 h-auto">
+                      <TabsTrigger value="dashboard" className="gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm transition-all">
                         <LayoutDashboard className="h-4 w-4" />
                         Dashboard
                       </TabsTrigger>
-                      <TabsTrigger value="keys" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                      <div className="h-8 w-px bg-border" />
+                      <TabsTrigger value="keys" className="gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm transition-all">
                         <Key className="h-4 w-4" />
                         Keys
                       </TabsTrigger>
-                      <TabsTrigger value="cli" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                      <TabsTrigger value="cli" className="gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm transition-all">
                         <Terminal className="h-4 w-4" />
                         CLI
                       </TabsTrigger>
-                      <TabsTrigger value="db-analysis" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                      <TabsTrigger value="db-analysis" className="gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm transition-all">
                         <BarChart3 className="h-4 w-4" />
                         Analysis
                       </TabsTrigger>
-                      <TabsTrigger value="clients" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                      <div className="h-8 w-px bg-border" />
+                      <TabsTrigger value="clients" className="gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm transition-all">
                         <Users className="h-4 w-4" />
                         Clients
                       </TabsTrigger>
-                      <TabsTrigger value="monitor" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                      <TabsTrigger value="monitor" className="gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm transition-all">
                         <Activity className="h-4 w-4" />
                         Monitor
                       </TabsTrigger>
-                      <TabsTrigger value="info" className="gap-1.5 px-3 py-1.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">
+                      <TabsTrigger value="info" className="gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm transition-all">
                         <Server className="h-4 w-4" />
                         Info
                       </TabsTrigger>
@@ -201,6 +208,12 @@ function App() {
         open={showAddServer}
         onOpenChange={setShowAddServer}
         onAdd={addServer}
+      />
+      <EditServerDialog
+        server={serverToEdit}
+        open={showEditServer}
+        onOpenChange={setShowEditServer}
+        onSave={updateServer}
       />
       <UpdateNotification />
     </div>

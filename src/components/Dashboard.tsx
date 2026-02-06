@@ -17,7 +17,11 @@ import {
   Gauge,
   MemoryStick,
   Network,
+  Loader2,
+  Key,
+  Layers,
 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   LineChart,
   Line,
@@ -27,6 +31,9 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  BarChart,
+  Bar,
+  CartesianGrid,
 } from "recharts";
 import type { RedisInfo } from "@/types";
 
@@ -54,6 +61,11 @@ interface MetricHistory {
   usedMemory: number;
   connectedClients: number;
   hitRate: number;
+  fragRatio: number;
+  totalKeys: number;
+  evictedKeys: number;
+  expiredKeys: number;
+  totalCommands: number;
 }
 
 const MAX_HISTORY = 60;
@@ -197,6 +209,11 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
         usedMemory: info.memory?.used_memory || 0,
         connectedClients: info.server?.connected_clients || 0,
         hitRate: calculateHitRate(info),
+        fragRatio: info.memory?.mem_fragmentation_ratio || 0,
+        totalKeys: getTotalKeys(info),
+        evictedKeys: info.stats?.evicted_keys || 0,
+        expiredKeys: info.stats?.expired_keys || 0,
+        totalCommands: info.stats?.total_commands_processed || 0,
       };
       setHistory(prev => [...prev.slice(-MAX_HISTORY + 1), newPoint]);
       setIssues(detectIssues(info));
@@ -209,6 +226,17 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
     const sizes = ["B", "KB", "MB", "GB", "TB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
+  const formatTime = (ts: number): string => {
+    const d = new Date(ts);
+    return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
+  };
+
+  const formatCompact = (val: number): string => {
+    if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
+    if (val >= 1_000) return `${(val / 1_000).toFixed(1)}K`;
+    return val.toFixed(0);
   };
 
   const formatUptime = (seconds: number): string => {
@@ -257,10 +285,39 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
 
   if (!info) {
     return (
-      <div className="h-full flex items-center justify-center text-muted-foreground">
-        <div className="text-center">
-          <Database className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p>Loading dashboard...</p>
+      <div className="space-y-6 pb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton className="h-8 w-48 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-6 w-24" />
+        </div>
+        <div className="grid grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="p-4 rounded-xl bg-secondary/30 border">
+              <div className="flex items-center justify-between mb-2">
+                <Skeleton className="h-5 w-5 rounded" />
+                <Skeleton className="h-5 w-16" />
+              </div>
+              <Skeleton className="h-8 w-20 mb-1" />
+              <Skeleton className="h-3 w-32" />
+              <div className="mt-2 flex items-center gap-1">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Loading...</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          {[...Array(2)].map((_, i) => (
+            <div key={i} className="p-4 rounded-xl bg-card border">
+              <Skeleton className="h-5 w-40 mb-4" />
+              <div className="h-40 flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -274,6 +331,9 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
   const connectedClients = info.server?.connected_clients || 0;
   const totalKeys = getTotalKeys(info);
   const totalExpires = getTotalExpires(info);
+  const fragRatio = info.memory?.mem_fragmentation_ratio || 0;
+  const evictedKeys = info.stats?.evicted_keys || 0;
+  const expiredKeys = info.stats?.expired_keys || 0;
 
   return (
     <ScrollArea className="h-full">
@@ -368,108 +428,225 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
           </div>
         </div>
 
-        {history.length > 5 && (
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 rounded-xl bg-card border">
-              <h3 className="font-semibold mb-3 flex items-center gap-2">
-                <Zap className="h-4 w-4 text-green-500" />
-                Operations Over Time
-              </h3>
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={history.slice(-30).map((h, i) => ({ ...h, time: i }))}>
-                    <defs>
-                      <linearGradient id="opsGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="time" hide />
-                    <YAxis hide domain={['auto', 'auto']} />
-                    <Tooltip 
-                      contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
-                      labelFormatter={() => ''}
-                      formatter={(value) => [`${Number(value).toLocaleString()} ops/sec`, 'Operations']}
-                    />
-                    <Area type="monotone" dataKey="opsPerSec" stroke="#22c55e" fill="url(#opsGradient)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
+        <div className="grid grid-cols-4 gap-4">
+          <div
+            className="p-4 rounded-xl bg-gradient-to-br from-yellow-500/10 to-yellow-500/5 border border-yellow-500/20 cursor-pointer hover:border-yellow-500/40 transition-colors"
+            onClick={() => onNavigate("keys")}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <Key className="h-5 w-5 text-yellow-500" />
+              <Badge variant="outline" className="text-xs">{totalExpires.toLocaleString()} expiring</Badge>
+            </div>
+            <div className="text-2xl font-bold">{totalKeys.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">Total Keys</div>
+            {renderMiniChart(history.map(h => h.totalKeys), "rgb(234, 179, 8)")}
+          </div>
+
+          <div
+            className={`p-4 rounded-xl bg-gradient-to-br border cursor-pointer transition-colors ${
+              fragRatio > 1.5
+                ? "from-red-500/10 to-red-500/5 border-red-500/20 hover:border-red-500/40"
+                : "from-cyan-500/10 to-cyan-500/5 border-cyan-500/20 hover:border-cyan-500/40"
+            }`}
+            onClick={() => onNavigate("db-analysis")}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <Layers className="h-5 w-5 text-cyan-500" />
+              <Badge variant="outline" className={`text-xs ${fragRatio > 1.5 ? "text-red-500" : fragRatio < 1 && fragRatio > 0 ? "text-yellow-500" : ""}`}>
+                {fragRatio > 1.5 ? "High" : fragRatio < 1 && fragRatio > 0 ? "Swapping" : "Normal"}
+              </Badge>
+            </div>
+            <div className="text-2xl font-bold">{fragRatio.toFixed(2)}x</div>
+            <div className="text-xs text-muted-foreground">Fragmentation Ratio</div>
+            {renderMiniChart(history.map(h => h.fragRatio), "rgb(6, 182, 212)")}
+          </div>
+
+          <div
+            className={`p-4 rounded-xl bg-gradient-to-br border transition-colors ${
+              evictedKeys > 0
+                ? "from-red-500/10 to-red-500/5 border-red-500/20"
+                : "from-emerald-500/10 to-emerald-500/5 border-emerald-500/20"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <TrendingUp className="h-5 w-5 text-red-400" />
+              <Badge variant="outline" className={`text-xs ${evictedKeys > 0 ? "text-red-500" : "text-green-500"}`}>
+                {evictedKeys > 0 ? "active" : "none"}
+              </Badge>
+            </div>
+            <div className="text-2xl font-bold">{evictedKeys.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">Evicted Keys</div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-gradient-to-br from-pink-500/10 to-pink-500/5 border border-pink-500/20">
+            <div className="flex items-center justify-between mb-2">
+              <Database className="h-5 w-5 text-pink-500" />
+              <Badge variant="outline" className="text-xs">{info.replication?.role || "N/A"}</Badge>
+            </div>
+            <div className="text-2xl font-bold">{expiredKeys.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">Expired Keys</div>
+          </div>
+        </div>
+
+        {history.length > 5 && (() => {
+          const tooltipStyle = { background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px', fontSize: '12px' };
+          const axisStyle = { fontSize: 10, fill: '#888' };
+          const chartData = history.slice(-30);
+
+          return (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 rounded-xl bg-card border">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-green-500" />
+                  Operations Over Time
+                </h3>
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData}>
+                      <defs>
+                        <linearGradient id="opsGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                      <XAxis dataKey="timestamp" tickFormatter={formatTime} tick={axisStyle} tickLine={false} axisLine={{ stroke: '#444' }} interval="preserveStartEnd" />
+                      <YAxis tickFormatter={formatCompact} tick={axisStyle} tickLine={false} axisLine={false} width={45} />
+                      <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => formatTime(Number(v))} formatter={(value) => [`${Number(value).toLocaleString()} ops/sec`, 'Throughput']} />
+                      <Area type="monotone" dataKey="opsPerSec" stroke="#22c55e" fill="url(#opsGradient)" strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-card border">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <MemoryStick className="h-4 w-4 text-blue-500" />
+                  Memory Usage Over Time
+                </h3>
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData.map(h => ({ ...h, memMB: h.usedMemory / (1024 * 1024) }))}>
+                      <defs>
+                        <linearGradient id="memGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                      <XAxis dataKey="timestamp" tickFormatter={formatTime} tick={axisStyle} tickLine={false} axisLine={{ stroke: '#444' }} interval="preserveStartEnd" />
+                      <YAxis tickFormatter={(v) => `${Number(v).toFixed(0)} MB`} tick={axisStyle} tickLine={false} axisLine={false} width={55} />
+                      <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => formatTime(Number(v))} formatter={(value) => [`${Number(value).toFixed(1)} MB`, 'Memory']} />
+                      <Area type="monotone" dataKey="memMB" stroke="#3b82f6" fill="url(#memGradient)" strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-card border">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Users className="h-4 w-4 text-purple-500" />
+                  Connected Clients Over Time
+                </h3>
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                      <XAxis dataKey="timestamp" tickFormatter={formatTime} tick={axisStyle} tickLine={false} axisLine={{ stroke: '#444' }} interval="preserveStartEnd" />
+                      <YAxis tick={axisStyle} tickLine={false} axisLine={false} width={35} allowDecimals={false} />
+                      <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => formatTime(Number(v))} formatter={(value) => [`${Number(value)} clients`, 'Connected']} />
+                      <Line type="monotone" dataKey="connectedClients" stroke="#a855f7" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-card border">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-orange-500" />
+                  Cache Hit Rate Over Time
+                </h3>
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData}>
+                      <defs>
+                        <linearGradient id="hitGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                      <XAxis dataKey="timestamp" tickFormatter={formatTime} tick={axisStyle} tickLine={false} axisLine={{ stroke: '#444' }} interval="preserveStartEnd" />
+                      <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={axisStyle} tickLine={false} axisLine={false} width={40} />
+                      <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => formatTime(Number(v))} formatter={(value) => [`${Number(value).toFixed(1)}%`, 'Hit Rate']} />
+                      <Area type="monotone" dataKey="hitRate" stroke="#f97316" fill="url(#hitGradient)" strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-card border">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-cyan-500" />
+                  Memory Fragmentation Ratio
+                </h3>
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                      <XAxis dataKey="timestamp" tickFormatter={formatTime} tick={axisStyle} tickLine={false} axisLine={{ stroke: '#444' }} interval="preserveStartEnd" />
+                      <YAxis domain={['auto', 'auto']} tickFormatter={(v) => `${Number(v).toFixed(2)}x`} tick={axisStyle} tickLine={false} axisLine={false} width={45} />
+                      <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => formatTime(Number(v))} formatter={(value) => [`${Number(value).toFixed(3)}x`, 'Frag Ratio']} />
+                      <Line type="monotone" dataKey="fragRatio" stroke="#06b6d4" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-card border">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Key className="h-4 w-4 text-yellow-500" />
+                  Total Keys Over Time
+                </h3>
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData}>
+                      <defs>
+                        <linearGradient id="keysGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#eab308" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#eab308" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                      <XAxis dataKey="timestamp" tickFormatter={formatTime} tick={axisStyle} tickLine={false} axisLine={{ stroke: '#444' }} interval="preserveStartEnd" />
+                      <YAxis tickFormatter={formatCompact} tick={axisStyle} tickLine={false} axisLine={false} width={45} />
+                      <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => formatTime(Number(v))} formatter={(value) => [`${Number(value).toLocaleString()} keys`, 'Total Keys']} />
+                      <Area type="monotone" dataKey="totalKeys" stroke="#eab308" fill="url(#keysGradient)" strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </div>
+          );
+        })()}
 
-            <div className="p-4 rounded-xl bg-card border">
-              <h3 className="font-semibold mb-3 flex items-center gap-2">
-                <MemoryStick className="h-4 w-4 text-blue-500" />
-                Memory Usage Over Time
-              </h3>
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={history.slice(-30).map((h, i) => ({ ...h, time: i, memMB: h.usedMemory / (1024 * 1024) }))}>
-                    <defs>
-                      <linearGradient id="memGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="time" hide />
-                    <YAxis hide domain={['auto', 'auto']} />
-                    <Tooltip 
-                      contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
-                      labelFormatter={() => ''}
-                      formatter={(value) => [`${Number(value).toFixed(1)} MB`, 'Memory']}
-                    />
-                    <Area type="monotone" dataKey="memMB" stroke="#3b82f6" fill="url(#memGradient)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-card border">
-              <h3 className="font-semibold mb-3 flex items-center gap-2">
-                <Users className="h-4 w-4 text-purple-500" />
-                Connected Clients Over Time
-              </h3>
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={history.slice(-30).map((h, i) => ({ ...h, time: i }))}>
-                    <XAxis dataKey="time" hide />
-                    <YAxis hide domain={['auto', 'auto']} />
-                    <Tooltip 
-                      contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
-                      labelFormatter={() => ''}
-                      formatter={(value) => [`${Number(value)} clients`, 'Connected']}
-                    />
-                    <Line type="monotone" dataKey="connectedClients" stroke="#a855f7" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-card border">
-              <h3 className="font-semibold mb-3 flex items-center gap-2">
-                <Gauge className="h-4 w-4 text-orange-500" />
-                Cache Hit Rate Over Time
-              </h3>
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={history.slice(-30).map((h, i) => ({ ...h, time: i }))}>
-                    <defs>
-                      <linearGradient id="hitGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="time" hide />
-                    <YAxis hide domain={[0, 100]} />
-                    <Tooltip 
-                      contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
-                      labelFormatter={() => ''}
-                      formatter={(value) => [`${Number(value).toFixed(1)}%`, 'Hit Rate']}
-                    />
-                    <Area type="monotone" dataKey="hitRate" stroke="#f97316" fill="url(#hitGradient)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+        {Object.keys(info.keyspace).length > 0 && (
+          <div className="p-4 rounded-xl bg-card border">
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <Database className="h-4 w-4 text-indigo-500" />
+              Keyspace Distribution
+            </h3>
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={Object.entries(info.keyspace).map(([db, data]) => ({ db, keys: data.keys, expires: data.expires }))}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                  <XAxis dataKey="db" tick={{ fontSize: 10, fill: '#888' }} tickLine={false} axisLine={{ stroke: '#444' }} />
+                  <YAxis tickFormatter={formatCompact} tick={{ fontSize: 10, fill: '#888' }} tickLine={false} axisLine={false} width={45} />
+                  <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px', fontSize: '12px' }} formatter={(value, name) => [`${Number(value).toLocaleString()}`, name === 'keys' ? 'Total Keys' : 'With Expiry']} />
+                  <Bar dataKey="keys" fill="#6366f1" radius={[4, 4, 0, 0]} name="keys" />
+                  <Bar dataKey="expires" fill="#818cf8" radius={[4, 4, 0, 0]} name="expires" />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
         )}

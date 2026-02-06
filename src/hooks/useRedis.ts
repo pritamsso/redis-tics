@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { RedisServer, RedisInfo, ClientInfo, MonitorEvent, IpStats, ConnectionState } from "@/types";
 
 export function useRedis() {
@@ -54,7 +54,8 @@ export function useRedis() {
     try {
       const savedServers = await invoke<RedisServer[]>("get_servers");
       setServers(savedServers);
-    } catch {
+    } catch (error) {
+      console.error("Failed to load servers:", error);
       setServers([]);
     }
   };
@@ -94,8 +95,8 @@ export function useRedis() {
       if (server.password) {
         try {
           decryptedPassword = await invoke<string>("decrypt_server_password", { encrypted: server.password });
-        } catch {
-          // If decryption fails, use as-is (might be plain text from old version)
+        } catch (decryptError) {
+          console.warn("Password decryption failed, using as-is:", decryptError);
         }
       }
       const serverWithDecryptedPassword = { ...server, password: decryptedPassword };
@@ -105,6 +106,7 @@ export function useRedis() {
       await refreshInfo(serverId);
       await refreshClients(serverId);
     } catch (error) {
+      console.error("Connection failed:", error);
       setConnectionStates((prev) => ({
         ...prev,
         [serverId]: { serverId, connected: false, monitoring: false, error: String(error) },
@@ -118,6 +120,21 @@ export function useRedis() {
     } catch {}
     setConnectionStates((prev) => ({ ...prev, [serverId]: { serverId, connected: false, monitoring: false } }));
   }, []);
+
+  const updateServer = useCallback(async (updatedServer: RedisServer) => {
+    let encryptedPassword = updatedServer.password;
+    if (updatedServer.password) {
+      try {
+        encryptedPassword = await invoke<string>("encrypt_server_password", { password: updatedServer.password });
+      } catch {
+        // If encryption fails, store as-is
+      }
+    }
+    const serverToSave = { ...updatedServer, password: encryptedPassword };
+    const updatedServers = servers.map((s) => (s.id === updatedServer.id ? serverToSave : s));
+    setServers(updatedServers);
+    await invoke("save_servers", { servers: updatedServers });
+  }, [servers]);
 
   const refreshInfo = useCallback(async (serverId: string) => {
     try {
@@ -174,6 +191,7 @@ export function useRedis() {
     selectedIp,
     setSelectedIp,
     addServer,
+    updateServer,
     removeServer,
     connect,
     disconnect,

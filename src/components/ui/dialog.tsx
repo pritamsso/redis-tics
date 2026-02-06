@@ -1,4 +1,5 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 
@@ -64,33 +65,32 @@ const DialogContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
     const context = React.useContext(DialogContext);
     if (!context?.open) return null;
 
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
+    return createPortal(
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div className="fixed inset-0 bg-black/80" onClick={() => context.setOpen(false)} />
-        <div className="relative z-50 max-h-[90vh] overflow-y-auto">
-          <div
-            ref={ref}
-            className={cn(
-              "w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-2xl relative",
-              "backdrop-blur-none",
-              className
-            )}
-            style={{ backgroundColor: 'hsl(var(--card))' }}
-            {...props}
+        <div
+          ref={ref}
+          className={cn(
+            "relative z-50 bg-background rounded-lg border border-border shadow-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto",
+            "backdrop-blur-none",
+            className
+          )}
+          style={{ backgroundColor: "hsl(var(--card))" }}
+          {...props}
+        >
+          {children}
+          <button
+            className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100"
+            onClick={() => {
+              onClose?.();
+              context.setOpen(false);
+            }}
           >
-            {children}
-            <button
-              className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100"
-              onClick={() => {
-                onClose?.();
-                context.setOpen(false);
-              }}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+            <X className="h-4 w-4" />
+          </button>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 );

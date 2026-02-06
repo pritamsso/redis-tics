@@ -25,6 +25,11 @@ export function AboutDialog() {
     setChecking(true);
     setError(null);
     setUpdateAvailable(null);
+    if (import.meta.env.DEV) {
+      setError("Updates are disabled in development builds.");
+      setChecking(false);
+      return;
+    }
     try {
       const update = await check();
       if (update && update.available) {
@@ -80,24 +85,20 @@ export function AboutDialog() {
     <Dialog>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2 border-border hover:bg-secondary">
-          <div className="w-5 h-5 bg-gradient-to-br from-red-500 to-orange-500 rounded flex items-center justify-center text-[8px] font-bold text-white">
-            RT
-          </div>
+          <img src="/logo.svg" alt="Redis Tics" className="w-5 h-5" />
           About
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3 text-2xl">
-            <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-orange-500 rounded-xl flex items-center justify-center text-white text-xl font-bold shadow-lg">
-              RT
-            </div>
+            <img src="/logo.svg" alt="Redis Tics" className="w-12 h-12 rounded-xl shadow-lg" />
             Redis Tics
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-6 py-4">
           <p className="text-muted-foreground">
-            A powerful, open-source Redis analytics and monitoring dashboard. Monitor multiple servers, 
+            A powerful, Redis analytics and monitoring dashboard. Monitor multiple servers, 
             track commands in real-time, analyze memory usage, and diagnose performance issues.
           </p>
           
@@ -115,8 +116,8 @@ export function AboutDialog() {
 
           <div className="pt-4 border-t space-y-4">
             <button 
-              onClick={() => open("https://redistics.com")}
-              className="w-full flex items-center gap-3 p-3 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors cursor-pointer"
+              onClick={() => { open("https://redistics.com").catch(console.error); }}
+              className="w-full flex items-center gap-3 p-3 rounded-lg bg-secondary hover:bg-secondary/80 active:scale-[0.98] transition-all cursor-pointer"
             >
               <div className="w-5 h-5 flex items-center justify-center">🌐</div>
               <div className="flex-1 text-left">
@@ -127,8 +128,8 @@ export function AboutDialog() {
             </button>
 
             <button 
-              onClick={() => open("https://github.com/pritamsso/redis-tics")}
-              className="w-full flex items-center gap-3 p-3 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors cursor-pointer"
+              onClick={() => { open("https://github.com/pritamsso/redis-tics").catch(console.error); }}
+              className="w-full flex items-center gap-3 p-3 rounded-lg bg-secondary hover:bg-secondary/80 active:scale-[0.98] transition-all cursor-pointer"
             >
               <Github className="h-5 w-5" />
               <div className="flex-1 text-left">
@@ -139,8 +140,8 @@ export function AboutDialog() {
             </button>
 
             <button 
-              onClick={() => open("https://github.com/pritamsso")}
-              className="w-full flex items-center gap-3 p-3 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors cursor-pointer"
+              onClick={() => { open("https://github.com/pritamsso").catch(console.error); }}
+              className="w-full flex items-center gap-3 p-3 rounded-lg bg-secondary hover:bg-secondary/80 active:scale-[0.98] transition-all cursor-pointer"
             >
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-sm font-bold">
                 P
@@ -195,8 +196,8 @@ export function AboutDialog() {
             <p className="text-sm text-muted-foreground flex items-center justify-center gap-1">
               Made with ❤️ by 
               <button 
-                onClick={() => open("https://github.com/pritamsso")}
-                className="text-red-500 hover:underline font-medium cursor-pointer"
+                onClick={() => { open("https://github.com/pritamsso").catch(console.error); }}
+                className="text-red-500 hover:underline font-medium cursor-pointer active:opacity-70 transition-opacity"
               >
                 @pritamsso
               </button>
