@@ -45,7 +45,7 @@ export function EditServerDialog({ server, open, onOpenChange, onSave }: EditSer
       username: username || undefined,
       password: password || undefined,
       db: parseInt(db, 10),
-      tls: tls || undefined,
+      tls,
     });
     onOpenChange(false);
   };

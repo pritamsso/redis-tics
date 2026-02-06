@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Sidebar } from "@/components/Sidebar";
 import { AddServerDialog } from "@/components/AddServerDialog";
 import { EditServerDialog } from "@/components/EditServerDialog";
@@ -74,8 +75,16 @@ function App() {
         connectionStates={connectionStates}
         onSelectServer={handleSelectServer}
         onAddServer={() => setShowAddServer(true)}
-        onEditServer={(server) => {
-          setServerToEdit(server);
+        onEditServer={async (server) => {
+          let decryptedServer = { ...server };
+          if (server.password) {
+            try {
+              decryptedServer.password = await invoke<string>("decrypt_server_password", { encrypted: server.password });
+            } catch {
+              // If decryption fails, use as-is (might be plain text from old version)
+            }
+          }
+          setServerToEdit(decryptedServer);
           setShowEditServer(true);
         }}
         onRemoveServer={removeServer}

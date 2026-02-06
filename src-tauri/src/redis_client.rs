@@ -62,6 +62,16 @@ impl RedisManager {
                     server.db.unwrap_or(0)
                 )
             }
+            (Some(username), None) => {
+                format!(
+                    "{}://{}@{}:{}/{}",
+                    scheme,
+                    urlencoding::encode(username),
+                    server.host,
+                    server.port,
+                    server.db.unwrap_or(0)
+                )
+            }
             (None, Some(password)) => {
                 format!(
                     "{}://:{}@{}:{}/{}",
@@ -149,6 +159,9 @@ impl RedisManager {
         let url = match (&server.username, &server.password) {
             (Some(username), Some(password)) => {
                 format!("{}://{}:{}@{}:{}", scheme, urlencoding::encode(username), urlencoding::encode(password), server.host, server.port)
+            }
+            (Some(username), None) => {
+                format!("{}://{}@{}:{}", scheme, urlencoding::encode(username), server.host, server.port)
             }
             (None, Some(password)) => {
                 format!("{}://:{}@{}:{}", scheme, urlencoding::encode(password), server.host, server.port)

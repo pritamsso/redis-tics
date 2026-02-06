@@ -134,7 +134,12 @@ export function useRedis() {
     const updatedServers = servers.map((s) => (s.id === updatedServer.id ? serverToSave : s));
     setServers(updatedServers);
     await invoke("save_servers", { servers: updatedServers });
-  }, [servers]);
+
+    const state = connectionStates[updatedServer.id];
+    if (state?.connected) {
+      await disconnect(updatedServer.id);
+    }
+  }, [servers, connectionStates, disconnect]);
 
   const refreshInfo = useCallback(async (serverId: string) => {
     try {
