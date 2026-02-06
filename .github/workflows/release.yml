@@ -439,5 +439,5 @@ jobs:
           
           # Push changes
           echo "📤 Pushing changes..."
-          git push origin main
+          git push origin HEAD:main
           echo "✅ Updated releases.json and pushed to repository"
