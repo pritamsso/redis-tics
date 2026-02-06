@@ -7,8 +7,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   HardDrive, Cpu, Clock, AlertTriangle, Database, Server,
-  Activity, Zap, RefreshCw, CheckCircle, XCircle
+  Activity, Zap, RefreshCw, CheckCircle, XCircle, Loader2
 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import type { AdvancedAnalytics } from "@/types";
 import { formatBytes, formatNumber } from "@/lib/utils";
@@ -82,6 +83,32 @@ export function AnalyticsPanel({ serverId }: AnalyticsPanelProps) {
     loadAnalytics();
   }, [serverId]);
 
+  if (loading && !analytics) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-9 w-24" />
+        </div>
+        <Skeleton className="h-10 w-full max-w-2xl" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="p-4 rounded-lg border bg-card">
+            <Skeleton className="h-5 w-32 mb-4" />
+            <div className="h-64 flex items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          </div>
+          <div className="p-4 rounded-lg border bg-card">
+            <Skeleton className="h-5 w-32 mb-4" />
+            <div className="h-64 flex items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!analytics && !loading) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
@@ -104,8 +131,12 @@ export function AnalyticsPanel({ serverId }: AnalyticsPanelProps) {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Advanced Analytics</h2>
         <Button variant="outline" size="sm" onClick={loadAnalytics} disabled={loading} className="gap-2">
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
+          {loading ? "Loading..." : "Refresh"}
         </Button>
       </div>
 

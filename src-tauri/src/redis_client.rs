@@ -48,24 +48,42 @@ impl RedisManager {
     }
 
     pub async fn connect(&self, server: &RedisServer) -> Result<(), String> {
-        let url = if let Some(ref password) = server.password {
-            format!(
-                "redis://:{}@{}:{}/{}",
-                password,
-                server.host,
-                server.port,
-                server.db.unwrap_or(0)
-            )
-        } else {
-            format!(
-                "redis://{}:{}/{}",
-                server.host,
-                server.port,
-                server.db.unwrap_or(0)
-            )
+        let scheme = if server.tls.unwrap_or(false) { "rediss" } else { "redis" };
+        
+        let url = match (&server.username, &server.password) {
+            (Some(username), Some(password)) => {
+                format!(
+                    "{}://{}:{}@{}:{}/{}",
+                    scheme,
+                    urlencoding::encode(username),
+                    urlencoding::encode(password),
+                    server.host,
+                    server.port,
+                    server.db.unwrap_or(0)
+                )
+            }
+            (None, Some(password)) => {
+                format!(
+                    "{}://:{}@{}:{}/{}",
+                    scheme,
+                    urlencoding::encode(password),
+                    server.host,
+                    server.port,
+                    server.db.unwrap_or(0)
+                )
+            }
+            _ => {
+                format!(
+                    "{}://{}:{}/{}",
+                    scheme,
+                    server.host,
+                    server.port,
+                    server.db.unwrap_or(0)
+                )
+            }
         };
 
-        let client = Client::open(url).map_err(|e| format!("Failed to create client: {}", e))?;
+        let client = Client::open(url.as_str()).map_err(|e| format!("Failed to create client: {}", e))?;
         let conn = client
             .get_multiplexed_async_connection()
             .await
@@ -127,10 +145,17 @@ impl RedisManager {
 
         stop_flag.store(false, Ordering::SeqCst);
 
-        let url = if let Some(ref password) = server.password {
-            format!("redis://:{}@{}:{}", password, server.host, server.port)
-        } else {
-            format!("redis://{}:{}", server.host, server.port)
+        let scheme = if server.tls.unwrap_or(false) { "rediss" } else { "redis" };
+        let url = match (&server.username, &server.password) {
+            (Some(username), Some(password)) => {
+                format!("{}://{}:{}@{}:{}", scheme, urlencoding::encode(username), urlencoding::encode(password), server.host, server.port)
+            }
+            (None, Some(password)) => {
+                format!("{}://:{}@{}:{}", scheme, urlencoding::encode(password), server.host, server.port)
+            }
+            _ => {
+                format!("{}://{}:{}", scheme, server.host, server.port)
+            }
         };
 
         let client = Client::open(url).map_err(|e| e.to_string())?;

@@ -1,56 +1,44 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Link2 } from "lucide-react";
+import { Pencil } from "lucide-react";
 import type { RedisServer } from "@/types";
 
-interface AddServerDialogProps {
+interface EditServerDialogProps {
+  server: RedisServer | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAdd: (server: Omit<RedisServer, "id">) => void;
+  onSave: (server: RedisServer) => void;
 }
 
-export function AddServerDialog({ open, onOpenChange, onAdd }: AddServerDialogProps) {
+export function EditServerDialog({ server, open, onOpenChange, onSave }: EditServerDialogProps) {
   const [name, setName] = useState("");
-  const [host, setHost] = useState("localhost");
-  const [port, setPort] = useState("6379");
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [db, setDb] = useState("0");
   const [tls, setTls] = useState(false);
-  const [connectionUrl, setConnectionUrl] = useState("");
-  const [useUrl, setUseUrl] = useState(false);
 
-  const parseRedisUrl = (url: string) => {
-    try {
-      const cleanUrl = url.replace(/^redis-cli\s+-u\s+/, "").trim();
-      const urlObj = new URL(cleanUrl);
-      
-      setHost(urlObj.hostname);
-      setPort(urlObj.port || "6379");
-      setTls(urlObj.protocol === "rediss:");
-      
-      if (urlObj.username && urlObj.username !== "") {
-        setUsername(decodeURIComponent(urlObj.username));
-      }
-      if (urlObj.password) {
-        setPassword(decodeURIComponent(urlObj.password));
-      }
-      if (urlObj.pathname && urlObj.pathname !== "/") {
-        const dbNum = urlObj.pathname.replace("/", "");
-        if (dbNum) setDb(dbNum);
-      }
-      
-      setName(`${urlObj.hostname}:${urlObj.port || "6379"}`);
-    } catch {
-      console.error("Failed to parse Redis URL");
+  useEffect(() => {
+    if (server) {
+      setName(server.name);
+      setHost(server.host);
+      setPort(String(server.port));
+      setUsername(server.username || "");
+      setPassword(server.password || "");
+      setDb(String(server.db || 0));
+      setTls(server.tls || false);
     }
-  };
+  }, [server]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onAdd({
+    if (!server) return;
+    
+    onSave({
+      ...server,
       name: name || `${host}:${port}`,
       host,
       port: parseInt(port, 10),
@@ -59,62 +47,23 @@ export function AddServerDialog({ open, onOpenChange, onAdd }: AddServerDialogPr
       db: parseInt(db, 10),
       tls: tls || undefined,
     });
-    resetForm();
     onOpenChange(false);
   };
 
-  const resetForm = () => {
-    setName("");
-    setHost("localhost");
-    setPort("6379");
-    setUsername("");
-    setPassword("");
-    setDb("0");
-    setTls(false);
-    setConnectionUrl("");
-    setUseUrl(false);
-  };
+  if (!server) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent onClose={() => onOpenChange(false)}>
         <DialogHeader>
-          <DialogTitle>Add Redis Server</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Pencil className="h-5 w-5" />
+            Edit Server Connection
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-secondary/50 border">
-            <input
-              type="checkbox"
-              id="useUrl"
-              checked={useUrl}
-              onChange={(e) => setUseUrl(e.target.checked)}
-              className="rounded"
-            />
-            <label htmlFor="useUrl" className="text-sm font-medium flex items-center gap-2 cursor-pointer">
-              <Link2 className="h-4 w-4" />
-              Import from connection URL
-            </label>
-          </div>
-
-          {useUrl && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Connection URL</label>
-              <Input
-                placeholder="redis://user:password@host:port/db or rediss://..."
-                value={connectionUrl}
-                onChange={(e) => {
-                  setConnectionUrl(e.target.value);
-                  if (e.target.value) parseRedisUrl(e.target.value);
-                }}
-              />
-              <p className="text-xs text-muted-foreground">
-                Paste your Redis URL (e.g., redis://default:password@host:port)
-              </p>
-            </div>
-          )}
-
           <div className="space-y-2">
-            <label className="text-sm font-medium">Name (optional)</label>
+            <label className="text-sm font-medium">Name</label>
             <Input
               placeholder="My Redis Server"
               value={name}
@@ -189,7 +138,7 @@ export function AddServerDialog({ open, onOpenChange, onAdd }: AddServerDialogPr
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit">Add Server</Button>
+            <Button type="submit">Save Changes</Button>
           </div>
         </form>
       </DialogContent>

@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
 import {
   RefreshCw,
   Database,
@@ -11,7 +10,6 @@ import {
   Clock,
   AlertTriangle,
   TrendingUp,
-  Trash2,
   Users,
   Activity,
   Zap,
@@ -19,11 +17,12 @@ import {
   BarChart3,
   Lightbulb,
   Shield,
+  Loader2,
 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import type {
   DatabaseAnalysis,
   ClientAnalysis,
-  BulkDeleteResult,
 } from "@/types";
 
 interface DatabaseAnalyticsProps {
@@ -49,10 +48,7 @@ export function DatabaseAnalytics({ serverId }: DatabaseAnalyticsProps) {
   const [analysis, setAnalysis] = useState<DatabaseAnalysis | null>(null);
   const [clientAnalysis, setClientAnalysis] = useState<ClientAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "clients" | "bulk">("overview");
-  const [bulkPattern, setBulkPattern] = useState("");
-  const [bulkResult, setBulkResult] = useState<BulkDeleteResult | null>(null);
-  const [bulkLoading, setBulkLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"overview" | "clients">("overview");
 
   const loadAnalysis = async () => {
     setLoading(true);
@@ -74,29 +70,9 @@ export function DatabaseAnalytics({ serverId }: DatabaseAnalyticsProps) {
     loadAnalysis();
   }, [serverId]);
 
-  const handleBulkDelete = async () => {
-    if (!bulkPattern || !confirm(`Delete all keys matching "${bulkPattern}"? This cannot be undone!`)) {
-      return;
-    }
-    setBulkLoading(true);
-    try {
-      const result = await invoke<BulkDeleteResult>("bulk_delete", {
-        serverId,
-        pattern: bulkPattern,
-      });
-      setBulkResult(result);
-      loadAnalysis();
-    } catch (err) {
-      console.error("Bulk delete failed:", err);
-    } finally {
-      setBulkLoading(false);
-    }
-  };
-
   const tabs = [
     { id: "overview", label: "Database Overview", icon: Database },
     { id: "clients", label: "Client Analysis", icon: Users },
-    { id: "bulk", label: "Bulk Actions", icon: Trash2 },
   ] as const;
 
   return (
@@ -117,13 +93,44 @@ export function DatabaseAnalytics({ serverId }: DatabaseAnalyticsProps) {
           ))}
         </div>
         <Button variant="outline" size="sm" onClick={loadAnalysis} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-          Refresh
+          {loading ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4 mr-2" />
+          )}
+          {loading ? "Analyzing..." : "Refresh"}
         </Button>
       </div>
 
       <ScrollArea className="flex-1">
-        {activeTab === "overview" && analysis && (
+        {activeTab === "overview" && loading && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="p-4 rounded-lg bg-secondary/50 border">
+                  <Skeleton className="h-4 w-24 mb-2" />
+                  <Skeleton className="h-8 w-16" />
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <Skeleton className="h-5 w-32" />
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-6 w-full" />
+                ))}
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-5 w-32" />
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-6 w-full" />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "overview" && !loading && analysis && (
           <div className="space-y-6">
             <div className="grid grid-cols-4 gap-4">
               <div className="p-4 rounded-lg bg-secondary/50 border">
@@ -307,7 +314,25 @@ export function DatabaseAnalytics({ serverId }: DatabaseAnalyticsProps) {
           </div>
         )}
 
-        {activeTab === "clients" && clientAnalysis && (
+        {activeTab === "clients" && loading && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-3 gap-4">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="p-4 rounded-lg bg-secondary/50 border">
+                  <Skeleton className="h-4 w-24 mb-2" />
+                  <Skeleton className="h-8 w-16" />
+                </div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "clients" && !loading && clientAnalysis && (
           <div className="space-y-6">
             <div className="grid grid-cols-3 gap-4">
               <div className="p-4 rounded-lg bg-secondary/50 border">
@@ -440,103 +465,6 @@ export function DatabaseAnalytics({ serverId }: DatabaseAnalyticsProps) {
                       <span className="font-mono">{anomaly.clientAddr}</span>
                       <span>{anomaly.details}</span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === "bulk" && (
-          <div className="space-y-6">
-            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30">
-              <div className="flex items-center gap-2 text-red-500 mb-2">
-                <AlertTriangle className="h-5 w-5" />
-                <span className="font-semibold">Danger Zone</span>
-              </div>
-              <p className="text-sm text-muted-foreground mb-4">
-                Bulk delete operations are irreversible. Make sure you have the correct
-                pattern before proceeding.
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="font-semibold">Bulk Delete by Pattern</h3>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Enter pattern (e.g., cache:*, temp:*, session:expired:*)"
-                  value={bulkPattern}
-                  onChange={(e) => setBulkPattern(e.target.value)}
-                  className="font-mono"
-                />
-                <Button
-                  variant="destructive"
-                  onClick={handleBulkDelete}
-                  disabled={!bulkPattern || bulkLoading}
-                >
-                  {bulkLoading ? (
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4 mr-2" />
-                  )}
-                  Delete Matching Keys
-                </Button>
-              </div>
-
-              {bulkResult && (
-                <div
-                  className={`p-4 rounded-lg border ${
-                    bulkResult.failedCount > 0
-                      ? "bg-yellow-500/10 border-yellow-500/30"
-                      : "bg-green-500/10 border-green-500/30"
-                  }`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div>
-                      <div className="text-sm text-muted-foreground">Deleted</div>
-                      <div className="text-2xl font-bold text-green-500">
-                        {bulkResult.deletedCount}
-                      </div>
-                    </div>
-                    {bulkResult.failedCount > 0 && (
-                      <div>
-                        <div className="text-sm text-muted-foreground">Failed</div>
-                        <div className="text-2xl font-bold text-red-500">
-                          {bulkResult.failedCount}
-                        </div>
-                      </div>
-                    )}
-                    <div className="ml-auto text-right">
-                      <div className="text-sm text-muted-foreground">Time</div>
-                      <div className="text-lg">{bulkResult.executionTimeMs}ms</div>
-                    </div>
-                  </div>
-                  {bulkResult.errors.length > 0 && (
-                    <div className="mt-3 text-sm text-red-400">
-                      Errors: {bulkResult.errors.slice(0, 3).join(", ")}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {analysis && (
-              <div className="space-y-3">
-                <h3 className="font-semibold">Quick Actions by Namespace</h3>
-                <p className="text-sm text-muted-foreground">
-                  Click a namespace to set it as the delete pattern
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  {analysis.namespaces.map((ns) => (
-                    <Button
-                      key={ns.namespace}
-                      variant="outline"
-                      className="justify-between"
-                      onClick={() => setBulkPattern(`${ns.namespace}:*`)}
-                    >
-                      <span className="font-mono text-sm truncate">{ns.namespace}:*</span>
-                      <Badge variant="secondary">{ns.keyCount}</Badge>
-                    </Button>
                   ))}
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import { Plus, Trash2, Plug, Unplug, Heart, Github } from "lucide-react";
+import { Plus, Trash2, Plug, Unplug, Heart, Github, Pencil } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ interface SidebarProps {
   connectionStates: Record<string, ConnectionState>;
   onSelectServer: (id: string) => void;
   onAddServer: () => void;
+  onEditServer: (server: RedisServer) => void;
   onRemoveServer: (id: string) => void;
   onConnect: (id: string) => void;
   onDisconnect: (id: string) => void;
@@ -23,6 +24,7 @@ export function Sidebar({
   connectionStates,
   onSelectServer,
   onAddServer,
+  onEditServer,
   onRemoveServer,
   onConnect,
   onDisconnect,
@@ -31,9 +33,7 @@ export function Sidebar({
     <div className="w-64 border-r bg-card flex flex-col h-full">
       <div className="p-4 border-b">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center shadow-lg text-white font-bold text-sm">
-            RT
-          </div>
+          <img src="/logo.svg" alt="Redis Tics" className="w-10 h-10 rounded-xl shadow-lg" />
           <div>
             <h1 className="font-bold text-lg leading-tight">Redis Tics</h1>
             <p className="text-xs text-muted-foreground">Monitor & Manage</p>
@@ -111,6 +111,17 @@ export function Sidebar({
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="h-7 w-7"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEditServer(server);
+                      }}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className="h-7 w-7 text-destructive"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -135,22 +146,22 @@ export function Sidebar({
           <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
             Made with <Heart className="h-3 w-3 text-red-500 fill-red-500" /> by
             <button 
-              onClick={() => open("https://github.com/pritamsso")}
-              className="text-red-500 hover:underline font-medium cursor-pointer"
+              onClick={() => { open("https://github.com/pritamsso").catch(console.error); }}
+              className="text-red-500 hover:underline font-medium cursor-pointer active:opacity-70 transition-opacity"
             >
               @pritamsso
             </button>
           </p>
           <div className="flex items-center justify-center gap-3">
             <button 
-              onClick={() => open("https://redistics.com")}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              onClick={() => { open("https://redistics.com").catch(console.error); }}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:opacity-70 transition-all cursor-pointer"
             >
               🌐 redistics.com
             </button>
             <button 
-              onClick={() => open("https://github.com/pritamsso/redis-tics")}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              onClick={() => { open("https://github.com/pritamsso/redis-tics").catch(console.error); }}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:opacity-70 transition-all cursor-pointer"
             >
               <Github className="h-3 w-3" />
               GitHub

@@ -16,7 +16,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prepare-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump_version.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump version before build
+        id: bump_version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            CURRENT=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+            
+            if git rev-parse "v${CURRENT}" >/dev/null 2>&1; then
+              MAJOR=$(echo $CURRENT | cut -d. -f1)
+              MINOR=$(echo $CURRENT | cut -d. -f2)
+              PATCH=$(echo $CURRENT | cut -d. -f3)
+              NEW_PATCH=$((PATCH + 1))
+              VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+              echo "Auto-incrementing version from $CURRENT to $VERSION"
+              
+              sed -i "s/^version = \"$CURRENT\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+              sed -i "s/\"version\": \"$CURRENT\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+              sed -i "s/\"version\": \"$CURRENT\"/\"version\": \"$VERSION\"/" package.json
+              
+              git config --local user.email "github-actions[bot]@users.noreply.github.com"
+              git config --local user.name "github-actions[bot]"
+              git add src-tauri/Cargo.toml src-tauri/tauri.conf.json package.json
+              git commit -m "chore: bump version to $VERSION [skip ci]"
+              git push origin main
+            else
+              VERSION=$CURRENT
+            fi
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
   build:
+    needs: prepare-version
     permissions:
       contents: write
     strategy:
@@ -52,6 +98,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -140,7 +188,7 @@ jobs:
           if-no-files-found: warn
 
   release:
-    needs: build
+    needs: [prepare-version, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -149,44 +197,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get and bump version
+      - name: Set version from prepare job
         id: get_version
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            # Get current version from Cargo.toml
-            CURRENT=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-            
-            # Check if this version tag already exists
-            if git rev-parse "v${CURRENT}" >/dev/null 2>&1; then
-              # Auto-increment patch version
-              MAJOR=$(echo $CURRENT | cut -d. -f1)
-              MINOR=$(echo $CURRENT | cut -d. -f2)
-              PATCH=$(echo $CURRENT | cut -d. -f3)
-              NEW_PATCH=$((PATCH + 1))
-              VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
-              echo "Auto-incrementing version from $CURRENT to $VERSION"
-              
-              # Update version in Cargo.toml
-              sed -i.bak "s/^version = \"$CURRENT\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-              rm -f src-tauri/Cargo.toml.bak
-              
-              # Update version in tauri.conf.json
-              sed -i.bak "s/\"version\": \"$CURRENT\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-              rm -f src-tauri/tauri.conf.json.bak
-              
-              # Update version in package.json
-              sed -i.bak "s/\"version\": \"$CURRENT\"/\"version\": \"$VERSION\"/" package.json
-              rm -f package.json.bak
-            else
-              VERSION=$CURRENT
-            fi
-          fi
+          VERSION="${{ needs.prepare-version.outputs.version }}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
+          echo "Using version: $VERSION"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -204,11 +223,22 @@ jobs:
           
           # Copy and rename files for clarity
           find artifacts -name "*.dmg" -exec cp {} release-files/ \;
+          find artifacts -name "*.dmg.sig" -exec cp {} release-files/ \;
           find artifacts -name "*.deb" -exec cp {} release-files/ \;
+          find artifacts -name "*.deb.sig" -exec cp {} release-files/ \;
           find artifacts -name "*.AppImage" -exec cp {} release-files/ \;
+          find artifacts -name "*.AppImage.sig" -exec cp {} release-files/ \;
           find artifacts -name "*.msi" -exec cp {} release-files/ \;
+          find artifacts -name "*.msi.sig" -exec cp {} release-files/ \;
           find artifacts -name "*.exe" -exec cp {} release-files/ \;
-          
+          find artifacts -name "*.exe.sig" -exec cp {} release-files/ \;
+
+          # Normalize names (avoid spaces to prevent URL issues)
+          for f in release-files/Redis\ Tics_*; do
+            [ -e "$f" ] || continue
+            mv "$f" "${f//Redis Tics/Redis.Tics}"
+          done
+
           echo "=== Files to release ==="
           ls -la release-files/
 
@@ -217,6 +247,16 @@ jobs:
           VERSION="${{ steps.get_version.outputs.version }}"
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           NOTES="Redis Tics v${VERSION} - See release notes for details"
+
+          SIG_MAC_ARM=""
+          SIG_MAC_X64=""
+          SIG_LINUX_APPIMAGE=""
+          SIG_WINDOWS_MSI=""
+
+          [ -f "release-files/Redis.Tics_${VERSION}_aarch64.dmg.sig" ] && SIG_MAC_ARM=$(cat "release-files/Redis.Tics_${VERSION}_aarch64.dmg.sig")
+          [ -f "release-files/Redis.Tics_${VERSION}_x64.dmg.sig" ] && SIG_MAC_X64=$(cat "release-files/Redis.Tics_${VERSION}_x64.dmg.sig")
+          [ -f "release-files/Redis.Tics_${VERSION}_amd64.AppImage.sig" ] && SIG_LINUX_APPIMAGE=$(cat "release-files/Redis.Tics_${VERSION}_amd64.AppImage.sig")
+          [ -f "release-files/Redis.Tics_${VERSION}_x64-setup.msi.sig" ] && SIG_WINDOWS_MSI=$(cat "release-files/Redis.Tics_${VERSION}_x64-setup.msi.sig")
           
           cat > release-files/latest.json << EOF
           {
@@ -225,19 +265,19 @@ jobs:
             "pub_date": "${DATE}",
             "platforms": {
               "darwin-aarch64": {
-                "signature": "",
+                "signature": "${SIG_MAC_ARM}",
                 "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_aarch64.dmg"
               },
               "darwin-x86_64": {
-                "signature": "",
+                "signature": "${SIG_MAC_X64}",
                 "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_x64.dmg"
               },
               "linux-x86_64": {
-                "signature": "",
+                "signature": "${SIG_LINUX_APPIMAGE}",
                 "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_amd64.AppImage"
               },
               "windows-x86_64": {
-                "signature": "",
+                "signature": "${SIG_WINDOWS_MSI}",
                 "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_x64-setup.msi"
               }
             }

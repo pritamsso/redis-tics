@@ -158,14 +158,18 @@ export function KeyBrowser({ serverId }: KeyBrowserProps) {
   const loadKeyValue = async (key: string) => {
     setSelectedKey(key);
     setLoadingValue(true);
+    setError("");
     try {
       const value = await invoke<KeyValue>("get_key_value", {
         serverId,
         key,
       });
+      console.log("Loaded key value:", value);
       setKeyValue(value);
     } catch (err) {
+      console.error("Failed to load key value:", err);
       setError(String(err));
+      setKeyValue(null);
     } finally {
       setLoadingValue(false);
     }
@@ -298,17 +302,22 @@ export function KeyBrowser({ serverId }: KeyBrowserProps) {
 
   const renderValue = (value: KeyValue) => {
     const data = value.value;
+    console.log("Rendering value:", data);
+    console.log("Value type:", typeof data);
+    console.log("Value keys:", Object.keys(data));
 
     if ("String" in data) {
+      const stringValue = data.String;
+      console.log("String value:", stringValue, "Length:", stringValue?.length);
       return (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="text-sm text-muted-foreground">String Value</div>
             <div className="flex gap-1">
-              <Button size="sm" variant="ghost" onClick={() => copyToClipboard(data.String)}>
+              <Button size="sm" variant="ghost" onClick={() => copyToClipboard(stringValue)}>
                 <Copy className="h-3 w-3" />
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setEditMode(true); setEditValue(data.String); }}>
+              <Button size="sm" variant="ghost" onClick={() => { setEditMode(true); setEditValue(stringValue); }}>
                 <Edit3 className="h-3 w-3" />
               </Button>
             </div>
@@ -330,9 +339,62 @@ export function KeyBrowser({ serverId }: KeyBrowserProps) {
               </div>
             </div>
           ) : (
-            <pre className="bg-secondary p-3 rounded-lg text-sm overflow-auto max-h-96 whitespace-pre-wrap break-all">
-              {data.String}
-            </pre>
+            <div className="space-y-2">
+              <pre className="bg-secondary p-3 rounded-lg text-sm overflow-auto max-h-96 whitespace-pre-wrap break-all">
+                {stringValue || "(empty string)"}
+              </pre>
+              {stringValue && (
+                <div className="text-xs text-muted-foreground">
+                  Length: {stringValue.length} characters
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    } else if ("string" in data) {
+      const stringValue = data.string;
+      console.log("String value (lowercase):", stringValue, "Length:", (stringValue as string)?.length);
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-muted-foreground">String Value</div>
+            <div className="flex gap-1">
+              <Button size="sm" variant="ghost" onClick={() => copyToClipboard(stringValue as string)}>
+                <Copy className="h-3 w-3" />
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setEditMode(true); setEditValue(stringValue as string); }}>
+                <Edit3 className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+          {editMode ? (
+            <div className="space-y-2">
+              <Textarea
+                value={editValue}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditValue(e.target.value)}
+                className="font-mono text-sm min-h-32"
+              />
+              <div className="flex gap-2">
+                <Button size="sm" onClick={saveStringValue}>
+                  <Save className="h-3 w-3 mr-1" /> Save
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setEditMode(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <pre className="bg-secondary p-3 rounded-lg text-sm overflow-auto max-h-96 whitespace-pre-wrap break-all">
+                {(stringValue as string) || "(empty string)"}
+              </pre>
+              {(stringValue as string) && (
+                <div className="text-xs text-muted-foreground">
+                  Length: {(stringValue as string).length} characters
+                </div>
+              )}
+            </div>
           )}
         </div>
       );
@@ -352,6 +414,35 @@ export function KeyBrowser({ serverId }: KeyBrowserProps) {
           <ScrollArea className="h-80">
             <div className="space-y-1">
               {data.List.map((item, i) => (
+                <div key={i} className="flex gap-2 p-2 bg-secondary rounded text-sm group">
+                  <span className="text-muted-foreground w-8">{i}</span>
+                  <span className="break-all flex-1">{item}</span>
+                  <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 text-red-500" onClick={() => removeListItem(i)}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      );
+    }
+
+    if ("list" in data) {
+      const listData = data.list as string[];
+      return (
+        <div className="space-y-2">
+          <div className="text-sm text-muted-foreground">
+            List ({listData.length} items)
+          </div>
+          <div className="flex gap-2">
+            <Input placeholder="New item" value={addItemValue} onChange={(e) => setAddItemValue(e.target.value)} className="flex-1" />
+            <Button size="sm" onClick={() => addListItem("left")}><Plus className="h-3 w-3 mr-1" />Left</Button>
+            <Button size="sm" onClick={() => addListItem("right")}><Plus className="h-3 w-3 mr-1" />Right</Button>
+          </div>
+          <ScrollArea className="h-80">
+            <div className="space-y-1">
+              {listData.map((item, i) => (
                 <div key={i} className="flex gap-2 p-2 bg-secondary rounded text-sm group">
                   <span className="text-muted-foreground w-8">{i}</span>
                   <span className="break-all flex-1">{item}</span>
@@ -389,6 +480,30 @@ export function KeyBrowser({ serverId }: KeyBrowserProps) {
       );
     }
 
+    if ("set" in data) {
+      const setData = data.set as string[];
+      return (
+        <div className="space-y-2">
+          <div className="text-sm text-muted-foreground">
+            Set ({setData.length} members)
+          </div>
+          <div className="flex gap-2">
+            <Input placeholder="New member" value={addItemValue} onChange={(e) => setAddItemValue(e.target.value)} className="flex-1" />
+            <Button size="sm" onClick={addSetMember}><Plus className="h-3 w-3 mr-1" />Add</Button>
+          </div>
+          <ScrollArea className="h-80">
+            <div className="flex flex-wrap gap-2">
+              {setData.map((item, i) => (
+                <Badge key={i} variant="secondary" className="text-sm cursor-pointer hover:bg-red-500/20" onClick={() => removeSetMember(item)}>
+                  {item} <XCircle className="h-3 w-3 ml-1" />
+                </Badge>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      );
+    }
+
     if ("ZSet" in data) {
       return (
         <div className="space-y-2">
@@ -403,6 +518,37 @@ export function KeyBrowser({ serverId }: KeyBrowserProps) {
           <ScrollArea className="h-80">
             <div className="space-y-1">
               {data.ZSet.map((item, i) => (
+                <div key={i} className="flex justify-between p-2 bg-secondary rounded text-sm group">
+                  <span className="break-all">{item.member}</span>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{item.score}</Badge>
+                    <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 text-red-500" onClick={() => removeZSetMember(item.member)}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      );
+    }
+
+    if ("zset" in data) {
+      const zsetData = data.zset as any[];
+      return (
+        <div className="space-y-2">
+          <div className="text-sm text-muted-foreground">
+            Sorted Set ({zsetData.length} members)
+          </div>
+          <div className="flex gap-2">
+            <Input placeholder="Member" value={addItemValue} onChange={(e) => setAddItemValue(e.target.value)} className="flex-1" />
+            <Input placeholder="Score" type="number" value={addItemScore} onChange={(e) => setAddItemScore(e.target.value)} className="w-24" />
+            <Button size="sm" onClick={addZSetMember}><Plus className="h-3 w-3 mr-1" />Add</Button>
+          </div>
+          <ScrollArea className="h-80">
+            <div className="space-y-1">
+              {zsetData.map((item, i) => (
                 <div key={i} className="flex justify-between p-2 bg-secondary rounded text-sm group">
                   <span className="break-all">{item.member}</span>
                   <div className="flex items-center gap-2">
@@ -450,6 +596,37 @@ export function KeyBrowser({ serverId }: KeyBrowserProps) {
       );
     }
 
+    if ("hash" in data) {
+      const entries = Object.entries(data.hash as Record<string, string>);
+      return (
+        <div className="space-y-2">
+          <div className="text-sm text-muted-foreground">
+            Hash ({entries.length} fields)
+          </div>
+          <div className="flex gap-2">
+            <Input placeholder="Field" value={newHashField} onChange={(e) => setNewHashField(e.target.value)} className="w-32" />
+            <Input placeholder="Value" value={newHashValue} onChange={(e) => setNewHashValue(e.target.value)} className="flex-1" />
+            <Button size="sm" onClick={addHashFieldFn}><Plus className="h-3 w-3 mr-1" />Add</Button>
+          </div>
+          <ScrollArea className="h-80">
+            <div className="space-y-1">
+              {entries.map(([field, val], i) => (
+                <div key={i} className="p-2 bg-secondary rounded text-sm group">
+                  <div className="flex items-center justify-between">
+                    <div className="font-medium text-primary">{field}</div>
+                    <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 text-red-500" onClick={() => removeHashField(field)}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <div className="text-muted-foreground break-all">{val}</div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      );
+    }
+
     if ("Stream" in data) {
       return (
         <div className="space-y-2">
@@ -465,7 +642,35 @@ export function KeyBrowser({ serverId }: KeyBrowserProps) {
                     {Object.entries(entry.fields).map(([k, v]) => (
                       <div key={k} className="flex gap-2">
                         <span className="text-muted-foreground">{k}:</span>
-                        <span className="break-all">{v}</span>
+                        <span className="break-all">{String(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      );
+    }
+
+    if ("stream" in data) {
+      const streamData = data.stream as any[];
+      return (
+        <div className="space-y-2">
+          <div className="text-sm text-muted-foreground">
+            Stream ({streamData.length} entries)
+          </div>
+          <ScrollArea className="h-96">
+            <div className="space-y-2">
+              {streamData.map((entry, i) => (
+                <div key={i} className="p-2 bg-secondary rounded text-sm">
+                  <div className="font-mono text-xs text-primary mb-1">{entry.id}</div>
+                  <div className="space-y-1">
+                    {Object.entries(entry.fields).map(([k, v]) => (
+                      <div key={k} className="flex gap-2">
+                        <span className="text-muted-foreground">{k}:</span>
+                        <span className="break-all">{String(v)}</span>
                       </div>
                     ))}
                   </div>
@@ -483,7 +688,14 @@ export function KeyBrowser({ serverId }: KeyBrowserProps) {
       );
     }
 
-    return null;
+    return (
+      <div className="text-muted-foreground text-sm">
+        <div className="mb-2">Unable to render value</div>
+        <pre className="bg-secondary p-3 rounded-lg text-xs overflow-auto">
+          {JSON.stringify(data, null, 2)}
+        </pre>
+      </div>
+    );
   };
 
   return (
@@ -662,6 +874,13 @@ export function KeyBrowser({ serverId }: KeyBrowserProps) {
             {loadingValue ? (
               <div className="flex items-center justify-center h-full">
                 <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : error ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <div className="text-red-500 mb-2">Failed to load key value</div>
+                  <div className="text-sm text-muted-foreground">{error}</div>
+                </div>
               </div>
             ) : keyValue ? (
               <div className="space-y-4">
