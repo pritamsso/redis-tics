@@ -1,6 +1,6 @@
 [package]
 name = "redis-tics"
-version = "1.0.1"
+version = "1.0.2"
 description = "A powerful Redis analytics and monitoring dashboard"
 authors = ["Pritam <pritamsso@github.com>"]
 license = "Apache-2.0"
