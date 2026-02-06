@@ -57,7 +57,7 @@ export function AddServerDialog({ open, onOpenChange, onAdd }: AddServerDialogPr
       username: username || undefined,
       password: password || undefined,
       db: parseInt(db, 10),
-      tls: tls || undefined,
+      tls,
     });
     resetForm();
     onOpenChange(false);
@@ -102,9 +102,9 @@ export function AddServerDialog({ open, onOpenChange, onAdd }: AddServerDialogPr
               <Input
                 placeholder="redis://user:password@host:port/db or rediss://..."
                 value={connectionUrl}
-                onChange={(e) => {
-                  setConnectionUrl(e.target.value);
-                  if (e.target.value) parseRedisUrl(e.target.value);
+                onChange={(e) => setConnectionUrl(e.target.value)}
+                onBlur={() => {
+                  if (connectionUrl) parseRedisUrl(connectionUrl);
                 }}
               />
               <p className="text-xs text-muted-foreground">
