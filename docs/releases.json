@@ -3,10 +3,12 @@
   "releases": [
     {
       "version": "1.0.1",
-      "date": "2026-01-30",
+      "date": "2026-02-06",
       "title": "Redis Tics v1.0.1",
       "description": "New release of Redis Tics with improvements and fixes",
       "changes": [
+        "chore: bump version to 1.0.1 [skip ci]",
+        "Improvements to the monitoring",
         "fix:redis perf optimization",
         "fix the rebase and push for release.json",
         "Resovle github action fixes",
