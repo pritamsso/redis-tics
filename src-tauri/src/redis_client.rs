@@ -728,6 +728,26 @@ impl RedisManager {
                  "This operation will DELETE ALL DATA. Cannot be undone!".to_string(),
                  "Critical - All data will be lost")
             }
+            "SCRIPT FLUSH" => {
+                ("critical",
+                 "SCRIPT FLUSH removes all cached Lua scripts and may break running workloads.".to_string(),
+                 "High - Script cache invalidation can cause latency spikes and failures")
+            }
+            "FUNCTION FLUSH" => {
+                ("critical",
+                 "FUNCTION FLUSH removes all persisted Redis functions. This is destructive.".to_string(),
+                 "Critical - Application function calls can fail immediately")
+            }
+            "MODULE UNLOAD" => {
+                ("critical",
+                 "MODULE UNLOAD can remove active module commands and data types.".to_string(),
+                 "High - Existing commands and data may become unavailable")
+            }
+            "ACL SETUSER" | "ACL DELUSER" => {
+                ("warning",
+                 "ACL changes impact authentication and authorization for clients.".to_string(),
+                 "Medium - Incorrect ACL updates can cause access outages")
+            }
             "DEBUG" => {
                 ("critical",
                  "DEBUG commands can crash or hang the server.".to_string(),
