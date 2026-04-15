@@ -41,6 +41,7 @@ const DANGEROUS_COMMANDS = [
   "ACL SETUSER",
   "ACL DELUSER",
 ];
+const MULTI_WORD_COMMAND_PREFIXES = ["SCRIPT", "FUNCTION", "CONFIG", "ACL", "MODULE"];
 const COMMAND_HINTS: Record<string, string> = {
   GET: "GET key - Get the value of a key",
   SET: "SET key value [EX seconds] - Set a key with optional expiry",
@@ -102,7 +103,7 @@ export function RedisCLI({ serverId }: RedisCLIProps) {
   const getOperationName = (cmd: string): string => {
     const parts = cmd.trim().split(/\s+/).map((part) => part.toUpperCase());
     if (parts.length === 0) return "";
-    if (parts.length >= 2 && (parts[0] === "SCRIPT" || parts[0] === "FUNCTION" || parts[0] === "CONFIG" || parts[0] === "ACL" || parts[0] === "MODULE")) {
+    if (parts.length >= 2 && MULTI_WORD_COMMAND_PREFIXES.includes(parts[0])) {
       return `${parts[0]} ${parts[1]}`;
     }
     return parts[0];
