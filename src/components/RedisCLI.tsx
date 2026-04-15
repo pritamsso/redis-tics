@@ -27,7 +27,20 @@ interface HistoryEntry {
   timestamp: number;
 }
 
-const DANGEROUS_COMMANDS = ["FLUSHDB", "FLUSHALL", "DEBUG", "SHUTDOWN", "CONFIG SET", "SLAVEOF", "REPLICAOF"];
+const DANGEROUS_COMMANDS = [
+  "FLUSHDB",
+  "FLUSHALL",
+  "DEBUG",
+  "SHUTDOWN",
+  "CONFIG SET",
+  "SLAVEOF",
+  "REPLICAOF",
+  "SCRIPT FLUSH",
+  "FUNCTION FLUSH",
+  "MODULE UNLOAD",
+  "ACL SETUSER",
+  "ACL DELUSER",
+];
 const COMMAND_HINTS: Record<string, string> = {
   GET: "GET key - Get the value of a key",
   SET: "SET key value [EX seconds] - Set a key with optional expiry",
@@ -52,6 +65,8 @@ const COMMAND_HINTS: Record<string, string> = {
   MEMORY: "MEMORY USAGE key - Get memory usage of a key",
   CLIENT: "CLIENT LIST - Get list of connected clients",
   SLOWLOG: "SLOWLOG GET [count] - Get slow queries log",
+  FUNCTION: "FUNCTION LIST - List server-side functions",
+  FCALL: "FCALL function numkeys [key ...] [arg ...] - Call a server-side function",
 };
 
 export function RedisCLI({ serverId }: RedisCLIProps) {
@@ -84,6 +99,15 @@ export function RedisCLI({ serverId }: RedisCLIProps) {
     return DANGEROUS_COMMANDS.some((d) => upper.startsWith(d));
   };
 
+  const getOperationName = (cmd: string): string => {
+    const parts = cmd.trim().split(/\s+/).map((part) => part.toUpperCase());
+    if (parts.length === 0) return "";
+    if (parts.length >= 2 && (parts[0] === "SCRIPT" || parts[0] === "FUNCTION" || parts[0] === "CONFIG" || parts[0] === "ACL" || parts[0] === "MODULE")) {
+      return `${parts[0]} ${parts[1]}`;
+    }
+    return parts[0];
+  };
+
   const executeCommand = async () => {
     if (!command.trim()) return;
 
@@ -91,7 +115,7 @@ export function RedisCLI({ serverId }: RedisCLIProps) {
       try {
         const warn = await invoke<PerformanceWarning>("check_operation_impact", {
           serverId,
-          operation: command.split(" ")[0].toUpperCase(),
+          operation: getOperationName(command),
           pattern: command,
         });
         if (warn.level === "critical") {
