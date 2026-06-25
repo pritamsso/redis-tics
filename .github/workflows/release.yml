@@ -37,6 +37,7 @@ jobs:
 
       - name: Bump version before build
         id: bump_version
+        shell: bash
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
@@ -110,6 +111,7 @@ jobs:
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
@@ -136,6 +138,7 @@ jobs:
         run: npm ci
 
       - name: Verify updater signing secret
+        shell: bash
         run: |
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
             echo "TAURI_SIGNING_PRIVATE_KEY is not configured."
@@ -154,6 +157,7 @@ jobs:
 
       - name: Ad-hoc sign macOS app
         if: matrix.platform == 'macos-latest'
+        shell: bash
         run: |
           # Find and ad-hoc sign the app bundle to reduce Gatekeeper issues
           APP_PATH=$(find ${{ matrix.bundle_path }} -name "*.app" -type d | head -1)
@@ -241,6 +245,7 @@ jobs:
 
       - name: Set version from prepare job
         id: get_version
+        shell: bash
         run: |
           VERSION="${{ needs.prepare-version.outputs.version }}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -252,11 +257,13 @@ jobs:
           path: artifacts
 
       - name: List downloaded artifacts
+        shell: bash
         run: |
           echo "=== All downloaded artifacts ==="
           find artifacts -type f
 
       - name: Prepare release files
+        shell: bash
         run: |
           mkdir -p release-files
           
@@ -284,6 +291,7 @@ jobs:
           ls -la release-files/
 
       - name: Generate Tauri updater manifest (latest.json)
+        shell: bash
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -344,6 +352,7 @@ jobs:
 
       - name: Generate changelog
         id: changelog
+        shell: bash
         run: |
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           
@@ -389,6 +398,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update releases.json for website
+        shell: bash
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
           DATE=$(date +%Y-%m-%d)
@@ -448,6 +458,7 @@ jobs:
           cat docs/releases.json | jq '.releases | map({version, date}) | .[:3]'
 
       - name: Commit and push releases.json
+        shell: bash
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"

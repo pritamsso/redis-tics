@@ -543,24 +543,3 @@ pub struct InvestigationFinding {
     pub title: String,
     pub detail: String,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CustomAlert {
-    pub id: String,
-    pub name: String,
-    pub condition_type: String,
-    pub threshold: f64,
-    pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AlertTrigger {
-    pub alert_id: String,
-    pub alert_name: String,
-    pub triggered_at: u64,
-    pub current_value: f64,
-    pub threshold: f64,
-    pub message: String,
-}
