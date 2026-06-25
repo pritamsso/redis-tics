@@ -486,7 +486,7 @@ jobs:
           
           # Reset any other unstaged changes to ensure clean state
           echo "🧹 Ensuring clean git state..."
-          git diff --name-only | grep -v "docs/releases.json" | xargs -r git checkout --
+          git diff --name-only -z -- . ':(exclude)docs/releases.json' | xargs -0 -r git checkout --
           git status --short
           
           # Commit changes
