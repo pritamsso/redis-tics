@@ -265,27 +265,41 @@ jobs:
       - name: Prepare release files
         shell: bash
         run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
           mkdir -p release-files
-          
-          # Copy and rename files for clarity
-          find artifacts -name "*.dmg" -exec cp {} release-files/ \;
-          find artifacts -name "*.dmg.sig" -exec cp {} release-files/ \;
-          find artifacts -name "*.tar.gz" -exec cp {} release-files/ \;
-          find artifacts -name "*.tar.gz.sig" -exec cp {} release-files/ \;
-          find artifacts -name "*.deb" -exec cp {} release-files/ \;
-          find artifacts -name "*.deb.sig" -exec cp {} release-files/ \;
-          find artifacts -name "*.AppImage" -exec cp {} release-files/ \;
-          find artifacts -name "*.AppImage.sig" -exec cp {} release-files/ \;
-          find artifacts -name "*.msi" -exec cp {} release-files/ \;
-          find artifacts -name "*.msi.sig" -exec cp {} release-files/ \;
-          find artifacts -name "*.exe" -exec cp {} release-files/ \;
-          find artifacts -name "*.exe.sig" -exec cp {} release-files/ \;
 
-          # Normalize names (avoid spaces to prevent URL issues)
-          for f in release-files/Redis\ Tics_*; do
-            [ -e "$f" ] || continue
-            mv "$f" "${f//Redis Tics/Redis.Tics}"
-          done
+          copy_first() {
+            local artifact_dir="$1"
+            local name_pattern="$2"
+            local destination="$3"
+            local required="${4:-required}"
+            local source
+            source=$(find "$artifact_dir" -type f -name "$name_pattern" | sort | head -1 || true)
+            if [ -z "$source" ]; then
+              if [ "$required" = "required" ]; then
+                echo "Missing artifact matching ${name_pattern} in ${artifact_dir}"
+                exit 1
+              fi
+              return 0
+            fi
+            cp "$source" "$destination"
+          }
+
+          # User-facing installers.
+          copy_first "artifacts/redis-tics-macOS-ARM64-dmg" "*.dmg" "release-files/Redis.Tics_${VERSION}_aarch64.dmg" optional
+          copy_first "artifacts/redis-tics-macOS-Intel-dmg" "*.dmg" "release-files/Redis.Tics_${VERSION}_x64.dmg" optional
+          copy_first "artifacts/redis-tics-Linux-deb" "*.deb" "release-files/redis-tics_${VERSION}_amd64.deb" optional
+          copy_first "artifacts/redis-tics-Windows-nsis" "*.exe" "release-files/Redis.Tics_${VERSION}_x64-setup.exe" optional
+
+          # Updater artifacts. These must exist and must be signed.
+          copy_first "artifacts/redis-tics-macOS-ARM64-updater" "*.tar.gz" "release-files/Redis.Tics_${VERSION}_aarch64.app.tar.gz"
+          copy_first "artifacts/redis-tics-macOS-ARM64-updater" "*.tar.gz.sig" "release-files/Redis.Tics_${VERSION}_aarch64.app.tar.gz.sig"
+          copy_first "artifacts/redis-tics-macOS-Intel-updater" "*.tar.gz" "release-files/Redis.Tics_${VERSION}_x64.app.tar.gz"
+          copy_first "artifacts/redis-tics-macOS-Intel-updater" "*.tar.gz.sig" "release-files/Redis.Tics_${VERSION}_x64.app.tar.gz.sig"
+          copy_first "artifacts/redis-tics-Linux-appimage" "*.AppImage" "release-files/Redis.Tics_${VERSION}_amd64.AppImage"
+          copy_first "artifacts/redis-tics-Linux-appimage" "*.AppImage.sig" "release-files/Redis.Tics_${VERSION}_amd64.AppImage.sig"
+          copy_first "artifacts/redis-tics-Windows-msi" "*.msi" "release-files/Redis.Tics_${VERSION}_x64-setup.msi"
+          copy_first "artifacts/redis-tics-Windows-msi" "*.msi.sig" "release-files/Redis.Tics_${VERSION}_x64-setup.msi.sig"
 
           echo "=== Files to release ==="
           ls -la release-files/
