@@ -7,6 +7,7 @@ export interface RedisServer {
   password?: string;
   db?: number;
   tls?: boolean;
+  connectionMode?: "standalone" | "cluster";
 }
 
 export interface RedisInfo {
@@ -90,6 +91,18 @@ export interface ConnectionState {
   connected: boolean;
   monitoring: boolean;
   error?: string;
+}
+
+export type AppLogLevel = "debug" | "info" | "success" | "warn" | "error";
+
+export interface AppLogEntry {
+  id: string;
+  timestamp: string;
+  level: AppLogLevel;
+  source: string;
+  message: string;
+  details?: string;
+  serverId?: string;
 }
 
 export interface SlowLogEntry {
@@ -358,4 +371,83 @@ export interface ClientAnalysis {
   clientsByCommand: CommandClientInfo[];
   suspiciousPatterns: SuspiciousPattern[];
   anomalies: ClientAnomaly[];
+}
+
+export interface RedisInvestigation {
+  generatedAt: number;
+  summary: InvestigationSummary;
+  nodes: NodeInvestigation[];
+  findings: InvestigationFinding[];
+  clusterNodes: ClusterNode[];
+}
+
+export interface InvestigationSummary {
+  nodeCount: number;
+  primaryCount: number;
+  replicaCount: number;
+  connectedClients: number;
+  blockedClients: number;
+  opsPerSec: number;
+  usedMemory: number;
+  maxMemory: number;
+  maxMemoryPolicy: string;
+  hitRate: number;
+  rejectedConnections: number;
+  evictedKeys: number;
+  slowLogCount: number;
+  latencyEventCount: number;
+  errorCount: number;
+  pressureScore: number;
+}
+
+export interface NodeInvestigation {
+  nodeId: string;
+  endpoint: string;
+  role: string;
+  clusterFlags: string[];
+  connectedClients: number;
+  blockedClients: number;
+  maxClients: number;
+  usedMemory: number;
+  usedMemoryHuman: string;
+  maxMemory: number;
+  maxMemoryPolicy: string;
+  memFragmentationRatio: number;
+  opsPerSec: number;
+  instantaneousInputKbps: number;
+  instantaneousOutputKbps: number;
+  hitRate: number;
+  totalCommandsProcessed: number;
+  rejectedConnections: number;
+  evictedKeys: number;
+  expiredKeys: number;
+  connectedReplicas: number;
+  replicationLagSeconds?: number;
+  clientRecentMaxInputBuffer: number;
+  clientRecentMaxOutputBuffer: number;
+  totalQueryBufferBytes: number;
+  totalOutputBufferBytes: number;
+  totalOutputListItems: number;
+  avgClientIdleSeconds: number;
+  maxClientIdleSeconds: number;
+  clientsByCommand: CommandClientInfo[];
+  topClients: ClientInfo[];
+  commandStats: CommandStat[];
+  slowLog: SlowLogEntry[];
+  latencyEvents: LatencyEvent[];
+  errorStats: ErrorStat[];
+  notes: string[];
+}
+
+export interface LatencyEvent {
+  event: string;
+  latestMs: number;
+  maxMs: number;
+}
+
+export interface InvestigationFinding {
+  level: string;
+  nodeId?: string;
+  title: string;
+  detail: string;
 }

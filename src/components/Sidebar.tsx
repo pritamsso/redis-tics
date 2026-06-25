@@ -78,8 +78,10 @@ export function Sidebar({
                   />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm truncate">{server.name}</div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {server.host}:{server.port}
+                    <div className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                      <span className="truncate">{server.host}:{server.port}</span>
+                      {server.tls && <span className="text-[10px] uppercase">TLS</span>}
+                      {server.connectionMode === "cluster" && <span className="text-[10px] uppercase">Cluster</span>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

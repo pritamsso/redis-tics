@@ -1,13 +1,16 @@
 {
   "name": "redis-tics",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "version:sync": "node scripts/sync-version.mjs",
+    "version:patch": "node scripts/sync-version.mjs --patch",
+    "version:check": "node scripts/check-version-sync.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",

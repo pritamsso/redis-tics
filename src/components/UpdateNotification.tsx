@@ -3,6 +3,7 @@ import { check, type DownloadEvent } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { isTauriRuntime } from "@/lib/tauriRuntime";
 import {
   Download,
   RefreshCw,
@@ -27,6 +28,7 @@ export function UpdateNotification() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
+    if (!isTauriRuntime()) return;
     checkForUpdates();
   }, []);
 
@@ -42,7 +44,7 @@ export function UpdateNotification() {
         });
       }
     } catch (err) {
-      console.log("Update check failed:", err);
+      console.warn("Update check failed:", err);
     }
   };
 

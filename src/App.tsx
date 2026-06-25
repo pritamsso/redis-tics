@@ -11,13 +11,16 @@ import { AnalyticsPanel } from "@/components/AnalyticsPanel";
 import { KeyBrowser } from "@/components/KeyBrowser";
 import { RedisCLI } from "@/components/RedisCLI";
 import { DatabaseAnalytics } from "@/components/DatabaseAnalytics";
+import { InvestigationPanel } from "@/components/InvestigationPanel";
+import { LogsPanel } from "@/components/LogsPanel";
 import { Dashboard } from "@/components/Dashboard";
 import { UpdateNotification } from "@/components/UpdateNotification";
 import { AboutDialog } from "@/components/AboutDialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Database, Key, Terminal, BarChart3, LayoutDashboard, Users, Activity, Server } from "lucide-react";
+import { RefreshCw, Database, Key, Terminal, BarChart3, LayoutDashboard, Users, Activity, Server, Gauge } from "lucide-react";
 import { useRedis } from "@/hooks/useRedis";
+import { isTauriRuntime } from "@/lib/tauriRuntime";
 
 function App() {
   const [showAddServer, setShowAddServer] = useState(false);
@@ -30,6 +33,7 @@ function App() {
     activeServerId,
     setActiveServerId,
     connectionStates,
+    logs,
     serverInfo,
     clients,
     monitorEvents,
@@ -46,6 +50,8 @@ function App() {
     startMonitoring,
     stopMonitoring,
     clearMonitorEvents,
+    addLog,
+    clearLogs,
   } = useRedis();
 
   const activeServer = servers.find((s) => s.id === activeServerId);
@@ -77,11 +83,12 @@ function App() {
         onAddServer={() => setShowAddServer(true)}
         onEditServer={async (server) => {
           let decryptedServer = { ...server };
-          if (server.password) {
+          if (server.password && isTauriRuntime()) {
             try {
               decryptedServer.password = await invoke<string>("decrypt_server_password", { encrypted: server.password });
-            } catch {
+            } catch (error) {
               // If decryption fails, use as-is (might be plain text from old version)
+              addLog("warn", "crypto", "Password decryption failed while opening edit dialog", error, server.id);
             }
           }
           setServerToEdit(decryptedServer);
@@ -133,6 +140,10 @@ function App() {
                         <BarChart3 className="h-4 w-4" />
                         Analysis
                       </TabsTrigger>
+                      <TabsTrigger value="investigate" className="gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm transition-all">
+                        <Gauge className="h-4 w-4" />
+                        Investigate
+                      </TabsTrigger>
                       <div className="h-8 w-px bg-border" />
                       <TabsTrigger value="clients" className="gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm transition-all">
                         <Users className="h-4 w-4" />
@@ -183,6 +194,9 @@ function App() {
                 <TabsContent value="db-analysis" className="h-[calc(100vh-180px)]">
                   <DatabaseAnalytics serverId={activeServerId} />
                 </TabsContent>
+                <TabsContent value="investigate">
+                  <InvestigationPanel serverId={activeServerId} />
+                </TabsContent>
                 <TabsContent value="clients">
                   <ClientsPanel
                     clients={clients[activeServerId]}
@@ -225,6 +239,7 @@ function App() {
         onSave={updateServer}
       />
       <UpdateNotification />
+      <LogsPanel logs={logs} onClear={clearLogs} />
     </div>
   );
 }

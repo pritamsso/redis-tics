@@ -307,6 +307,14 @@ async fn analyze_clients(
 }
 
 #[tauri::command]
+async fn investigate_redis(
+    state: tauri::State<'_, Arc<RedisManager>>,
+    server_id: String,
+) -> Result<RedisInvestigation, String> {
+    state.investigate(&server_id).await
+}
+
+#[tauri::command]
 async fn rename_key(
     state: tauri::State<'_, Arc<RedisManager>>,
     server_id: String,
@@ -367,6 +375,7 @@ pub fn run() {
             bulk_delete,
             analyze_database,
             analyze_clients,
+            investigate_redis,
             rename_key,
             copy_key,
         ])

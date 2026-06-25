@@ -6,6 +6,7 @@ import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-shell";
+import { isTauriRuntime } from "@/lib/tauriRuntime";
 
 export function AboutDialog() {
   const [checking, setChecking] = useState(false);
@@ -18,13 +19,22 @@ export function AboutDialog() {
 
   // Load version on mount
   useEffect(() => {
-    getVersion().then(setCurrentVersion).catch(() => setCurrentVersion("1.0.0"));
+    if (!isTauriRuntime()) {
+      setCurrentVersion("browser preview");
+      return;
+    }
+    getVersion().then(setCurrentVersion).catch(() => setCurrentVersion("unknown"));
   }, []);
 
   const checkForUpdates = async () => {
     setChecking(true);
     setError(null);
     setUpdateAvailable(null);
+    if (!isTauriRuntime()) {
+      setError("Update checks run inside the desktop app.");
+      setChecking(false);
+      return;
+    }
     if (import.meta.env.DEV) {
       setError("Updates are disabled in development builds.");
       setChecking(false);
@@ -54,6 +64,10 @@ export function AboutDialog() {
   };
 
   const downloadAndInstall = async () => {
+    if (!isTauriRuntime()) {
+      setError("Updates can be installed inside the desktop app.");
+      return;
+    }
     setDownloading(true);
     try {
       const update = await check();

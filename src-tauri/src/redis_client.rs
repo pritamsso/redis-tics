@@ -14,6 +14,25 @@ struct RedisConnection {
     conn: MultiplexedConnection,
     server: RedisServer,
     monitor_stop: Arc<AtomicBool>,
+    cluster: Option<ClusterRouting>,
+}
+
+#[derive(Debug, Clone)]
+struct ClusterMaster {
+    host: String,
+    port: u16,
+}
+
+#[derive(Debug, Clone)]
+struct SlotRange {
+    start: u16,
+    end: u16,
+    node_key: String,
+}
+
+struct ClusterRouting {
+    slots: Vec<SlotRange>,
+    connections: HashMap<String, MultiplexedConnection>,
 }
 
 pub struct RedisManager {
@@ -48,66 +67,85 @@ impl RedisManager {
     }
 
     pub async fn connect(&self, server: &RedisServer) -> Result<(), String> {
-        let scheme = if server.tls.unwrap_or(false) { "rediss" } else { "redis" };
-        
-        let url = match (&server.username, &server.password) {
-            (Some(username), Some(password)) => {
-                format!(
-                    "{}://{}:{}@{}:{}/{}",
-                    scheme,
-                    urlencoding::encode(username),
-                    urlencoding::encode(password),
-                    server.host,
-                    server.port,
-                    server.db.unwrap_or(0)
-                )
-            }
-            (Some(username), None) => {
-                format!(
-                    "{}://{}@{}:{}/{}",
-                    scheme,
-                    urlencoding::encode(username),
-                    server.host,
-                    server.port,
-                    server.db.unwrap_or(0)
-                )
-            }
-            (None, Some(password)) => {
-                format!(
-                    "{}://:{}@{}:{}/{}",
-                    scheme,
-                    urlencoding::encode(password),
-                    server.host,
-                    server.port,
-                    server.db.unwrap_or(0)
-                )
-            }
-            _ => {
-                format!(
-                    "{}://{}:{}/{}",
-                    scheme,
-                    server.host,
-                    server.port,
-                    server.db.unwrap_or(0)
-                )
-            }
-        };
-
+        let url = build_redis_url(server, &server.host, server.port);
         let client = Client::open(url.as_str()).map_err(|e| format!("Failed to create client: {}", e))?;
         let conn = client
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| format!("Failed to connect: {}", e))?;
 
+        let cluster = if server.connection_mode == Some(RedisConnectionMode::Cluster) {
+            Some(self.discover_cluster(server, conn.clone()).await?)
+        } else {
+            None
+        };
+
         let redis_conn = RedisConnection {
             client,
             conn,
             server: server.clone(),
             monitor_stop: Arc::new(AtomicBool::new(false)),
+            cluster,
         };
 
         self.connections.write().await.insert(server.id.clone(), redis_conn);
         Ok(())
+    }
+
+    async fn discover_cluster(
+        &self,
+        server: &RedisServer,
+        mut seed_conn: MultiplexedConnection,
+    ) -> Result<ClusterRouting, String> {
+        let slots_value: redis::Value = redis::cmd("CLUSTER")
+            .arg("SLOTS")
+            .query_async(&mut seed_conn)
+            .await
+            .map_err(|e| format!("Connected to seed, but cluster discovery failed: {}", e))?;
+
+        let (masters, slots) = parse_cluster_slots(&slots_value, &server.host)?;
+        if masters.is_empty() || slots.is_empty() {
+            return Err("Connected to seed, but no cluster primaries or slot ranges were discovered".to_string());
+        }
+
+        let mut connections = HashMap::new();
+        for (node_key, master) in &masters {
+            let url = build_redis_url(server, &master.host, master.port);
+            let client = Client::open(url.as_str())
+                .map_err(|e| format!("Failed to create cluster node client for {}: {}", node_key, e))?;
+            let conn = client
+                .get_multiplexed_async_connection()
+                .await
+                .map_err(|e| format!("Failed to connect to cluster primary {}: {}", node_key, e))?;
+            connections.insert(node_key.clone(), conn);
+        }
+
+        Ok(ClusterRouting {
+            slots,
+            connections,
+        })
+    }
+
+    fn routed_connection<'a>(
+        redis_conn: &'a mut RedisConnection,
+        key: &str,
+    ) -> Result<&'a mut MultiplexedConnection, String> {
+        let Some(cluster) = redis_conn.cluster.as_mut() else {
+            return Ok(&mut redis_conn.conn);
+        };
+
+        let slot = redis_key_slot(key);
+        let node_key = cluster
+            .slots
+            .iter()
+            .find(|range| slot >= range.start && slot <= range.end)
+            .map(|range| range.node_key.clone())
+            .ok_or_else(|| format!("No discovered cluster primary owns hash slot {}", slot))?;
+
+        cluster
+            .connections
+            .get_mut(&node_key)
+            .ok_or_else(|| format!("No active connection for cluster primary {}", node_key))
     }
 
     pub async fn disconnect(&self, server_id: &str) -> Result<(), String> {
@@ -422,6 +460,10 @@ impl RedisManager {
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
 
         let pattern = if pattern.is_empty() { "*" } else { pattern };
+
+        if redis_conn.cluster.is_some() {
+            return scan_cluster_keys(redis_conn, pattern, cursor, count).await;
+        }
         
         let (new_cursor, keys): (String, Vec<String>) = redis::cmd("SCAN")
             .arg(cursor)
@@ -496,6 +538,7 @@ impl RedisManager {
     pub async fn get_key_value(&self, server_id: &str, key: &str) -> Result<KeyValue, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        let conn = Self::routed_connection(redis_conn, key)?;
 
         // Pipeline TYPE and TTL together for speed
         let mut pipe = redis::pipe();
@@ -503,7 +546,7 @@ impl RedisManager {
         pipe.cmd("TTL").arg(key);
         
         let results: Vec<redis::Value> = pipe
-            .query_async(&mut redis_conn.conn)
+            .query_async(conn)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -525,7 +568,7 @@ impl RedisManager {
             "string" => {
                 let v: String = redis::cmd("GET")
                     .arg(key)
-                    .query_async(&mut redis_conn.conn)
+                    .query_async(conn)
                     .await
                     .unwrap_or_default();
                 KeyValueData::String(v)
@@ -535,7 +578,7 @@ impl RedisManager {
                     .arg(key)
                     .arg(0)
                     .arg(999)
-                    .query_async(&mut redis_conn.conn)
+                    .query_async(conn)
                     .await
                     .unwrap_or_default();
                 KeyValueData::List(v)
@@ -543,7 +586,7 @@ impl RedisManager {
             "set" => {
                 let v: Vec<String> = redis::cmd("SMEMBERS")
                     .arg(key)
-                    .query_async(&mut redis_conn.conn)
+                    .query_async(conn)
                     .await
                     .unwrap_or_default();
                 KeyValueData::Set(v)
@@ -554,7 +597,7 @@ impl RedisManager {
                     .arg(0)
                     .arg(999)
                     .arg("WITHSCORES")
-                    .query_async(&mut redis_conn.conn)
+                    .query_async(conn)
                     .await
                     .unwrap_or_default();
                 KeyValueData::ZSet(v.into_iter().map(|(member, score)| ZSetMember { member, score }).collect())
@@ -562,7 +605,7 @@ impl RedisManager {
             "hash" => {
                 let v: HashMap<String, String> = redis::cmd("HGETALL")
                     .arg(key)
-                    .query_async(&mut redis_conn.conn)
+                    .query_async(conn)
                     .await
                     .unwrap_or_default();
                 KeyValueData::Hash(v)
@@ -574,7 +617,7 @@ impl RedisManager {
                     .arg("+")
                     .arg("COUNT")
                     .arg(100)
-                    .query_async(&mut redis_conn.conn)
+                    .query_async(conn)
                     .await
                     .unwrap_or_default();
                 KeyValueData::Stream(parse_stream_entries(&entries))
@@ -751,10 +794,11 @@ impl RedisManager {
     pub async fn delete_key(&self, server_id: &str, key: &str) -> Result<bool, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        let conn = Self::routed_connection(redis_conn, key)?;
 
         let result: i64 = redis::cmd("DEL")
             .arg(key)
-            .query_async(&mut redis_conn.conn)
+            .query_async(conn)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -764,18 +808,19 @@ impl RedisManager {
     pub async fn set_key_ttl(&self, server_id: &str, key: &str, ttl: i64) -> Result<bool, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        let conn = Self::routed_connection(redis_conn, key)?;
 
         let result: i64 = if ttl < 0 {
             redis::cmd("PERSIST")
                 .arg(key)
-                .query_async(&mut redis_conn.conn)
+                .query_async(conn)
                 .await
                 .map_err(|e| e.to_string())?
         } else {
             redis::cmd("EXPIRE")
                 .arg(key)
                 .arg(ttl)
-                .query_async(&mut redis_conn.conn)
+                .query_async(conn)
                 .await
                 .map_err(|e| e.to_string())?
         };
@@ -798,7 +843,17 @@ impl RedisManager {
             cmd.arg(*arg);
         }
 
-        let result: Result<redis::Value, _> = cmd.query_async(&mut redis_conn.conn).await;
+        let command_name = parts[0].to_ascii_uppercase();
+        let result: Result<redis::Value, _> = if let Some(key_index) = first_key_arg_index(&command_name) {
+            if parts.len() > key_index {
+                let conn = Self::routed_connection(redis_conn, parts[key_index])?;
+                cmd.query_async(conn).await
+            } else {
+                cmd.query_async(&mut redis_conn.conn).await
+            }
+        } else {
+            cmd.query_async(&mut redis_conn.conn).await
+        };
         let execution_time_ms = start.elapsed().as_millis() as u64;
 
         match result {
@@ -820,6 +875,7 @@ impl RedisManager {
     pub async fn set_string(&self, server_id: &str, key: &str, value: &str, ttl: Option<i64>) -> Result<bool, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        let conn = Self::routed_connection(redis_conn, key)?;
 
         let mut cmd = redis::cmd("SET");
         cmd.arg(key).arg(value);
@@ -829,17 +885,18 @@ impl RedisManager {
             }
         }
 
-        let _: String = cmd.query_async(&mut redis_conn.conn).await.map_err(|e| e.to_string())?;
+        let _: String = cmd.query_async(conn).await.map_err(|e| e.to_string())?;
         Ok(true)
     }
 
     pub async fn hash_set(&self, server_id: &str, key: &str, field: &str, value: &str) -> Result<bool, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        let conn = Self::routed_connection(redis_conn, key)?;
 
         let _: i64 = redis::cmd("HSET")
             .arg(key).arg(field).arg(value)
-            .query_async(&mut redis_conn.conn)
+            .query_async(conn)
             .await
             .map_err(|e| e.to_string())?;
         Ok(true)
@@ -848,10 +905,11 @@ impl RedisManager {
     pub async fn hash_delete(&self, server_id: &str, key: &str, field: &str) -> Result<bool, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        let conn = Self::routed_connection(redis_conn, key)?;
 
         let result: i64 = redis::cmd("HDEL")
             .arg(key).arg(field)
-            .query_async(&mut redis_conn.conn)
+            .query_async(conn)
             .await
             .map_err(|e| e.to_string())?;
         Ok(result > 0)
@@ -860,11 +918,12 @@ impl RedisManager {
     pub async fn list_push(&self, server_id: &str, key: &str, value: &str, position: &str) -> Result<i64, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        let conn = Self::routed_connection(redis_conn, key)?;
 
         let cmd = if position == "left" { "LPUSH" } else { "RPUSH" };
         let result: i64 = redis::cmd(cmd)
             .arg(key).arg(value)
-            .query_async(&mut redis_conn.conn)
+            .query_async(conn)
             .await
             .map_err(|e| e.to_string())?;
         Ok(result)
@@ -873,16 +932,17 @@ impl RedisManager {
     pub async fn list_remove(&self, server_id: &str, key: &str, index: i64) -> Result<bool, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        let conn = Self::routed_connection(redis_conn, key)?;
 
         let placeholder = "__DELETED__";
         let _: () = redis::cmd("LSET")
             .arg(key).arg(index).arg(placeholder)
-            .query_async(&mut redis_conn.conn)
+            .query_async(&mut *conn)
             .await
             .map_err(|e| e.to_string())?;
         let _: i64 = redis::cmd("LREM")
             .arg(key).arg(1).arg(placeholder)
-            .query_async(&mut redis_conn.conn)
+            .query_async(conn)
             .await
             .map_err(|e| e.to_string())?;
         Ok(true)
@@ -891,10 +951,11 @@ impl RedisManager {
     pub async fn set_add(&self, server_id: &str, key: &str, member: &str) -> Result<bool, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        let conn = Self::routed_connection(redis_conn, key)?;
 
         let result: i64 = redis::cmd("SADD")
             .arg(key).arg(member)
-            .query_async(&mut redis_conn.conn)
+            .query_async(conn)
             .await
             .map_err(|e| e.to_string())?;
         Ok(result > 0)
@@ -903,10 +964,11 @@ impl RedisManager {
     pub async fn set_remove(&self, server_id: &str, key: &str, member: &str) -> Result<bool, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        let conn = Self::routed_connection(redis_conn, key)?;
 
         let result: i64 = redis::cmd("SREM")
             .arg(key).arg(member)
-            .query_async(&mut redis_conn.conn)
+            .query_async(conn)
             .await
             .map_err(|e| e.to_string())?;
         Ok(result > 0)
@@ -915,10 +977,11 @@ impl RedisManager {
     pub async fn zset_add(&self, server_id: &str, key: &str, score: f64, member: &str) -> Result<bool, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        let conn = Self::routed_connection(redis_conn, key)?;
 
         let result: i64 = redis::cmd("ZADD")
             .arg(key).arg(score).arg(member)
-            .query_async(&mut redis_conn.conn)
+            .query_async(conn)
             .await
             .map_err(|e| e.to_string())?;
         Ok(result >= 0)
@@ -927,10 +990,11 @@ impl RedisManager {
     pub async fn zset_remove(&self, server_id: &str, key: &str, member: &str) -> Result<bool, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        let conn = Self::routed_connection(redis_conn, key)?;
 
         let result: i64 = redis::cmd("ZREM")
             .arg(key).arg(member)
-            .query_async(&mut redis_conn.conn)
+            .query_async(conn)
             .await
             .map_err(|e| e.to_string())?;
         Ok(result > 0)
@@ -945,6 +1009,43 @@ impl RedisManager {
         let mut failed_count = 0u64;
         let mut errors = Vec::new();
         let mut cursor = "0".to_string();
+
+        if redis_conn.cluster.is_some() {
+            let mut scan_cursor = "0".to_string();
+            loop {
+                let scan = scan_cluster_keys(redis_conn, pattern, &scan_cursor, 100).await?;
+                for key in scan.keys {
+                    match Self::routed_connection(redis_conn, &key.key) {
+                        Ok(conn) => match redis::cmd("DEL").arg(&key.key).query_async::<i64>(conn).await {
+                            Ok(n) => deleted_count += n as u64,
+                            Err(e) => {
+                                failed_count += 1;
+                                if errors.len() < 10 {
+                                    errors.push(format!("{}: {}", key.key, e));
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            failed_count += 1;
+                            if errors.len() < 10 {
+                                errors.push(format!("{}: {}", key.key, e));
+                            }
+                        }
+                    }
+                }
+                scan_cursor = scan.cursor;
+                if scan_cursor == "0" {
+                    break;
+                }
+            }
+
+            return Ok(BulkDeleteResult {
+                deleted_count,
+                failed_count,
+                execution_time_ms: start.elapsed().as_millis() as u64,
+                errors,
+            });
+        }
 
         loop {
             let (new_cursor, keys): (String, Vec<String>) = redis::cmd("SCAN")
@@ -1001,25 +1102,35 @@ impl RedisManager {
         let mut sampled = 0u32;
 
         while sampled < sample_size {
-            let (new_cursor, keys): (String, Vec<String>) = redis::cmd("SCAN")
-                .arg(&cursor)
-                .arg("COUNT").arg(100)
-                .query_async(&mut redis_conn.conn)
-                .await
-                .map_err(|e| e.to_string())?;
+            let (new_cursor, keys): (String, Vec<String>) = if redis_conn.cluster.is_some() {
+                let scan = scan_cluster_keys(redis_conn, "*", &cursor, 100).await?;
+                (scan.cursor, scan.keys.into_iter().map(|key| key.key).collect())
+            } else {
+                redis::cmd("SCAN")
+                    .arg(&cursor)
+                    .arg("COUNT").arg(100)
+                    .query_async(&mut redis_conn.conn)
+                    .await
+                    .map_err(|e| e.to_string())?
+            };
 
             for key in keys {
                 if sampled >= sample_size { break; }
                 sampled += 1;
 
+                let conn = match Self::routed_connection(redis_conn, &key) {
+                    Ok(conn) => conn,
+                    Err(_) => continue,
+                };
+
                 let key_type: String = redis::cmd("TYPE").arg(&key)
-                    .query_async(&mut redis_conn.conn).await.unwrap_or_else(|_| "unknown".to_string());
+                    .query_async(&mut *conn).await.unwrap_or_else(|_| "unknown".to_string());
 
                 let ttl: i64 = redis::cmd("TTL").arg(&key)
-                    .query_async(&mut redis_conn.conn).await.unwrap_or(-1);
+                    .query_async(&mut *conn).await.unwrap_or(-1);
 
                 let mem: u64 = redis::cmd("MEMORY").arg("USAGE").arg(&key).arg("SAMPLES").arg(0)
-                    .query_async(&mut redis_conn.conn).await.unwrap_or(0);
+                    .query_async(conn).await.unwrap_or(0);
 
                 *type_counts.entry(key_type.clone()).or_insert(0) += 1;
                 *type_memory.entry(key_type.clone()).or_insert(0) += mem;
@@ -1187,13 +1298,63 @@ impl RedisManager {
         })
     }
 
-    pub async fn rename_key(&self, server_id: &str, old_key: &str, new_key: &str) -> Result<bool, String> {
+    pub async fn investigate(&self, server_id: &str) -> Result<RedisInvestigation, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
 
+        let cluster_nodes = if redis_conn.cluster.is_some() {
+            redis::cmd("CLUSTER")
+                .arg("NODES")
+                .query_async::<String>(&mut redis_conn.conn)
+                .await
+                .map(|nodes| parse_cluster_nodes(&nodes))
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        let mut nodes = Vec::new();
+        if let Some(cluster) = redis_conn.cluster.as_mut() {
+            let mut node_keys: Vec<String> = cluster.connections.keys().cloned().collect();
+            node_keys.sort();
+            for node_key in node_keys {
+                if let Some(conn) = cluster.connections.get_mut(&node_key) {
+                    let flags = cluster_nodes
+                        .iter()
+                        .find(|node| normalize_cluster_addr(&node.addr) == node_key)
+                        .map(|node| node.flags.split(',').map(|flag| flag.to_string()).collect())
+                        .unwrap_or_default();
+                    nodes.push(collect_node_investigation(&node_key, &node_key, flags, conn).await);
+                }
+            }
+        } else {
+            let endpoint = format!("{}:{}", redis_conn.server.host, redis_conn.server.port);
+            nodes.push(collect_node_investigation("seed", &endpoint, Vec::new(), &mut redis_conn.conn).await);
+        }
+
+        let summary = build_investigation_summary(&nodes);
+        let findings = build_investigation_findings(&summary, &nodes, &cluster_nodes);
+
+        Ok(RedisInvestigation {
+            generated_at: chrono::Utc::now().timestamp() as u64,
+            summary,
+            nodes,
+            findings,
+            cluster_nodes,
+        })
+    }
+
+    pub async fn rename_key(&self, server_id: &str, old_key: &str, new_key: &str) -> Result<bool, String> {
+        let mut connections = self.connections.write().await;
+        let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        if redis_conn.cluster.is_some() && redis_key_slot(old_key) != redis_key_slot(new_key) {
+            return Err("Cluster RENAME requires source and destination keys to be in the same hash slot. Use a hash tag like {user}:old and {user}:new.".to_string());
+        }
+        let conn = Self::routed_connection(redis_conn, old_key)?;
+
         let _: () = redis::cmd("RENAME")
             .arg(old_key).arg(new_key)
-            .query_async(&mut redis_conn.conn)
+            .query_async(conn)
             .await
             .map_err(|e| e.to_string())?;
         Ok(true)
@@ -1202,13 +1363,670 @@ impl RedisManager {
     pub async fn copy_key(&self, server_id: &str, source: &str, dest: &str) -> Result<bool, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+        if redis_conn.cluster.is_some() && redis_key_slot(source) != redis_key_slot(dest) {
+            return Err("Cluster COPY requires source and destination keys to be in the same hash slot. Use a hash tag like {user}:source and {user}:dest.".to_string());
+        }
+        let conn = Self::routed_connection(redis_conn, source)?;
 
         let result: i64 = redis::cmd("COPY")
             .arg(source).arg(dest)
-            .query_async(&mut redis_conn.conn)
+            .query_async(conn)
             .await
             .map_err(|e| e.to_string())?;
         Ok(result > 0)
+    }
+}
+
+fn build_redis_url(server: &RedisServer, host: &str, port: u16) -> String {
+    let scheme = if server.tls.unwrap_or(false) { "rediss" } else { "redis" };
+    let db = if server.connection_mode == Some(RedisConnectionMode::Cluster) {
+        0
+    } else {
+        server.db.unwrap_or(0)
+    };
+
+    match (&server.username, &server.password) {
+        (Some(username), Some(password)) => format!(
+            "{}://{}:{}@{}:{}/{}",
+            scheme,
+            urlencoding::encode(username),
+            urlencoding::encode(password),
+            host,
+            port,
+            db
+        ),
+        (Some(username), None) => format!(
+            "{}://{}@{}:{}/{}",
+            scheme,
+            urlencoding::encode(username),
+            host,
+            port,
+            db
+        ),
+        (None, Some(password)) => format!(
+            "{}://:{}@{}:{}/{}",
+            scheme,
+            urlencoding::encode(password),
+            host,
+            port,
+            db
+        ),
+        _ => format!("{}://{}:{}/{}", scheme, host, port, db),
+    }
+}
+
+fn parse_cluster_slots(
+    value: &redis::Value,
+    seed_host: &str,
+) -> Result<(HashMap<String, ClusterMaster>, Vec<SlotRange>), String> {
+    let redis::Value::Array(slot_rows) = value else {
+        return Err("CLUSTER SLOTS returned an unexpected response".to_string());
+    };
+
+    let mut masters = HashMap::new();
+    let mut slots = Vec::new();
+
+    for row in slot_rows {
+        let redis::Value::Array(items) = row else {
+            continue;
+        };
+        if items.len() < 3 {
+            continue;
+        }
+
+        let start = value_as_u16(&items[0]).ok_or("CLUSTER SLOTS included an invalid start slot")?;
+        let end = value_as_u16(&items[1]).ok_or("CLUSTER SLOTS included an invalid end slot")?;
+        let redis::Value::Array(master_items) = &items[2] else {
+            continue;
+        };
+        if master_items.len() < 2 {
+            continue;
+        }
+
+        let mut host = value_as_string(&master_items[0]).unwrap_or_default();
+        if host.is_empty() {
+            host = seed_host.to_string();
+        }
+
+        let port = value_as_u16(&master_items[1]).ok_or("CLUSTER SLOTS included an invalid primary port")?;
+        let node_key = format!("{}:{}", host, port);
+        masters.entry(node_key.clone()).or_insert(ClusterMaster { host, port });
+        slots.push(SlotRange {
+            start,
+            end,
+            node_key,
+        });
+    }
+
+    Ok((masters, slots))
+}
+
+async fn scan_cluster_keys(
+    redis_conn: &mut RedisConnection,
+    pattern: &str,
+    cursor: &str,
+    count: u32,
+) -> Result<KeyScanResult, String> {
+    let cluster = redis_conn.cluster.as_mut().ok_or("Server is not connected in cluster mode")?;
+    let mut node_keys: Vec<String> = cluster.connections.keys().cloned().collect();
+    node_keys.sort();
+
+    if node_keys.is_empty() {
+        return Ok(KeyScanResult {
+            keys: Vec::new(),
+            cursor: "0".to_string(),
+            has_more: false,
+            total_scanned: 0,
+        });
+    }
+
+    let (mut node_index, mut redis_cursor) = parse_cluster_scan_cursor(cursor);
+    if node_index >= node_keys.len() {
+        return Ok(KeyScanResult {
+            keys: Vec::new(),
+            cursor: "0".to_string(),
+            has_more: false,
+            total_scanned: 0,
+        });
+    }
+
+    loop {
+        let node_key = &node_keys[node_index];
+        let conn = cluster
+            .connections
+            .get_mut(node_key)
+            .ok_or_else(|| format!("No active connection for cluster primary {}", node_key))?;
+
+        let (new_cursor, keys): (String, Vec<String>) = redis::cmd("SCAN")
+            .arg(&redis_cursor)
+            .arg("MATCH")
+            .arg(pattern)
+            .arg("COUNT")
+            .arg(count)
+            .query_async(conn)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let keys_to_fetch: Vec<&String> = keys.iter().take(100).collect();
+        let key_infos = get_key_infos_pipelined(conn, &keys_to_fetch).await?;
+
+        let next_cursor = if new_cursor == "0" {
+            if node_index + 1 >= node_keys.len() {
+                "0".to_string()
+            } else {
+                format!("{}:0", node_index + 1)
+            }
+        } else {
+            format!("{}:{}", node_index, new_cursor)
+        };
+
+        if !key_infos.is_empty() || next_cursor == "0" {
+            return Ok(KeyScanResult {
+                keys: key_infos,
+                cursor: next_cursor.clone(),
+                has_more: next_cursor != "0",
+                total_scanned: count as u64,
+            });
+        }
+
+        node_index += 1;
+        redis_cursor = "0".to_string();
+        if node_index >= node_keys.len() {
+            return Ok(KeyScanResult {
+                keys: Vec::new(),
+                cursor: "0".to_string(),
+                has_more: false,
+                total_scanned: count as u64,
+            });
+        }
+    }
+}
+
+async fn get_key_infos_pipelined(
+    conn: &mut MultiplexedConnection,
+    keys: &[&String],
+) -> Result<Vec<KeyInfo>, String> {
+    if keys.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut pipe = redis::pipe();
+    for key in keys {
+        pipe.cmd("TYPE").arg(*key);
+        pipe.cmd("TTL").arg(*key);
+    }
+
+    let results: Vec<redis::Value> = pipe
+        .query_async(conn)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut key_infos = Vec::with_capacity(keys.len());
+    for (i, key) in keys.iter().enumerate() {
+        let type_idx = i * 2;
+        let ttl_idx = i * 2 + 1;
+
+        let key_type = match results.get(type_idx) {
+            Some(redis::Value::SimpleString(s)) => s.clone(),
+            Some(redis::Value::BulkString(b)) => String::from_utf8_lossy(b).to_string(),
+            _ => "unknown".to_string(),
+        };
+
+        let ttl = match results.get(ttl_idx) {
+            Some(redis::Value::Int(n)) => *n,
+            _ => -1,
+        };
+
+        key_infos.push(KeyInfo {
+            key: (*key).clone(),
+            key_type,
+            ttl,
+            size: None,
+            encoding: None,
+        });
+    }
+
+    Ok(key_infos)
+}
+
+fn parse_cluster_scan_cursor(cursor: &str) -> (usize, String) {
+    if cursor == "0" || cursor.is_empty() {
+        return (0, "0".to_string());
+    }
+
+    match cursor.split_once(':') {
+        Some((node, redis_cursor)) => (
+            node.parse::<usize>().unwrap_or(0),
+            redis_cursor.to_string(),
+        ),
+        None => (0, cursor.to_string()),
+    }
+}
+
+fn value_as_u16(value: &redis::Value) -> Option<u16> {
+    match value {
+        redis::Value::Int(n) => (*n).try_into().ok(),
+        redis::Value::BulkString(bytes) => String::from_utf8_lossy(bytes).parse().ok(),
+        redis::Value::SimpleString(s) => s.parse().ok(),
+        _ => None,
+    }
+}
+
+fn value_as_string(value: &redis::Value) -> Option<String> {
+    match value {
+        redis::Value::BulkString(bytes) => Some(String::from_utf8_lossy(bytes).to_string()),
+        redis::Value::SimpleString(s) => Some(s.clone()),
+        redis::Value::Int(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+fn first_key_arg_index(command: &str) -> Option<usize> {
+    match command {
+        "GET" | "SET" | "DEL" | "EXISTS" | "EXPIRE" | "TTL" | "TYPE" | "HGET" | "HSET"
+        | "HGETALL" | "HDEL" | "LPUSH" | "RPUSH" | "LRANGE" | "LREM" | "SADD" | "SREM"
+        | "SMEMBERS" | "ZADD" | "ZREM" | "ZRANGE" | "XADD" | "XRANGE" | "MEMORY" | "OBJECT" => {
+            if command == "MEMORY" || command == "OBJECT" {
+                Some(2)
+            } else {
+                Some(1)
+            }
+        }
+        _ => None,
+    }
+}
+
+fn redis_key_slot(key: &str) -> u16 {
+    let bytes = key.as_bytes();
+    let hash_key = match bytes.iter().position(|b| *b == b'{') {
+        Some(start) => match bytes[start + 1..].iter().position(|b| *b == b'}') {
+            Some(end_rel) if end_rel > 0 => &bytes[start + 1..start + 1 + end_rel],
+            _ => bytes,
+        },
+        None => bytes,
+    };
+
+    crc16(hash_key) % 16384
+}
+
+fn crc16(bytes: &[u8]) -> u16 {
+    let mut crc = 0u16;
+    for byte in bytes {
+        crc ^= (*byte as u16) << 8;
+        for _ in 0..8 {
+            if crc & 0x8000 != 0 {
+                crc = (crc << 1) ^ 0x1021;
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    crc
+}
+
+async fn collect_node_investigation(
+    node_id: &str,
+    endpoint: &str,
+    cluster_flags: Vec<String>,
+    conn: &mut MultiplexedConnection,
+) -> NodeInvestigation {
+    let info = redis::cmd("INFO")
+        .query_async::<String>(&mut *conn)
+        .await
+        .unwrap_or_default();
+    let info_map = parse_info_map(&info);
+
+    let clients = redis::cmd("CLIENT")
+        .arg("LIST")
+        .query_async::<String>(&mut *conn)
+        .await
+        .map(|list| parse_client_list(&list))
+        .unwrap_or_default();
+
+    let slow_log_values = redis::cmd("SLOWLOG")
+        .arg("GET")
+        .arg(20)
+        .query_async::<Vec<redis::Value>>(&mut *conn)
+        .await
+        .unwrap_or_default();
+
+    let latency_values = redis::cmd("LATENCY")
+        .arg("LATEST")
+        .query_async::<redis::Value>(&mut *conn)
+        .await
+        .unwrap_or(redis::Value::Array(Vec::new()));
+
+    let used_memory = map_u64(&info_map, "used_memory");
+    let max_memory = map_u64(&info_map, "maxmemory");
+    let keyspace_hits = map_u64(&info_map, "keyspace_hits");
+    let keyspace_misses = map_u64(&info_map, "keyspace_misses");
+    let total_keyspace = keyspace_hits + keyspace_misses;
+    let hit_rate = if total_keyspace > 0 {
+        keyspace_hits as f64 / total_keyspace as f64
+    } else {
+        0.0
+    };
+
+    let mut command_clients: HashMap<String, Vec<String>> = HashMap::new();
+    let mut total_query_buffer_bytes = 0;
+    let mut total_output_buffer_bytes = 0;
+    let mut total_output_list_items = 0;
+    let mut max_idle = 0;
+    let mut total_idle = 0;
+    for client in &clients {
+        command_clients
+            .entry(if client.cmd.is_empty() { "NULL".to_string() } else { client.cmd.clone() })
+            .or_default()
+            .push(client.ip.clone());
+        total_query_buffer_bytes += client.qbuf;
+        total_output_buffer_bytes += client.obl;
+        total_output_list_items += client.oll;
+        max_idle = max_idle.max(client.idle);
+        total_idle += client.idle;
+    }
+
+    let mut clients_by_command: Vec<CommandClientInfo> = command_clients
+        .into_iter()
+        .map(|(command, ips)| CommandClientInfo {
+            command,
+            client_count: ips.len() as u64,
+            client_ips: ips.into_iter().take(10).collect(),
+        })
+        .collect();
+    clients_by_command.sort_by(|a, b| b.client_count.cmp(&a.client_count));
+
+    let mut top_clients = clients.clone();
+    top_clients.sort_by(|a, b| {
+        let a_pressure = a.qbuf + a.obl + a.oll + a.idle;
+        let b_pressure = b.qbuf + b.obl + b.oll + b.idle;
+        b_pressure.cmp(&a_pressure)
+    });
+    top_clients.truncate(25);
+
+    let mut command_stats = parse_command_stats(&info);
+    command_stats.sort_by(|a, b| b.usec_per_call.partial_cmp(&a.usec_per_call).unwrap_or(std::cmp::Ordering::Equal));
+    command_stats.truncate(20);
+
+    let mut notes = Vec::new();
+    let connected_clients = map_u64(&info_map, "connected_clients").max(clients.len() as u64);
+    let max_clients = map_u64(&info_map, "maxclients");
+    let blocked_clients = map_u64(&info_map, "blocked_clients");
+    let mem_fragmentation_ratio = map_f64(&info_map, "mem_fragmentation_ratio");
+    let evicted_keys = map_u64(&info_map, "evicted_keys");
+    let rejected_connections = map_u64(&info_map, "rejected_connections");
+    if max_clients > 0 && connected_clients as f64 / max_clients as f64 > 0.8 {
+        notes.push("Client count is near maxclients".to_string());
+    }
+    if blocked_clients > 0 {
+        notes.push("Blocked clients are present".to_string());
+    }
+    if max_memory > 0 && used_memory as f64 / max_memory as f64 > 0.85 {
+        notes.push("Memory usage is near maxmemory".to_string());
+    }
+    if mem_fragmentation_ratio > 1.5 {
+        notes.push("Memory fragmentation is elevated".to_string());
+    }
+    if evicted_keys > 0 {
+        notes.push("Evictions have occurred".to_string());
+    }
+    if rejected_connections > 0 {
+        notes.push("Connections have been rejected".to_string());
+    }
+
+    NodeInvestigation {
+        node_id: node_id.to_string(),
+        endpoint: endpoint.to_string(),
+        role: info_map
+            .get("role")
+            .cloned()
+            .unwrap_or_else(|| if cluster_flags.iter().any(|flag| flag == "slave") { "replica".to_string() } else { "master".to_string() }),
+        cluster_flags,
+        connected_clients,
+        blocked_clients,
+        max_clients,
+        used_memory,
+        used_memory_human: info_map.get("used_memory_human").cloned().unwrap_or_default(),
+        max_memory,
+        max_memory_policy: info_map.get("maxmemory_policy").cloned().unwrap_or_default(),
+        mem_fragmentation_ratio,
+        ops_per_sec: map_u64(&info_map, "instantaneous_ops_per_sec"),
+        instantaneous_input_kbps: map_f64(&info_map, "instantaneous_input_kbps"),
+        instantaneous_output_kbps: map_f64(&info_map, "instantaneous_output_kbps"),
+        hit_rate,
+        total_commands_processed: map_u64(&info_map, "total_commands_processed"),
+        rejected_connections,
+        evicted_keys,
+        expired_keys: map_u64(&info_map, "expired_keys"),
+        connected_replicas: map_u64(&info_map, "connected_slaves"),
+        replication_lag_seconds: map_i64(&info_map, "master_last_io_seconds_ago"),
+        client_recent_max_input_buffer: map_u64(&info_map, "client_recent_max_input_buffer"),
+        client_recent_max_output_buffer: map_u64(&info_map, "client_recent_max_output_buffer"),
+        total_query_buffer_bytes,
+        total_output_buffer_bytes,
+        total_output_list_items,
+        avg_client_idle_seconds: if clients.is_empty() { 0.0 } else { total_idle as f64 / clients.len() as f64 },
+        max_client_idle_seconds: max_idle,
+        clients_by_command,
+        top_clients,
+        command_stats,
+        slow_log: parse_slow_log(&slow_log_values),
+        latency_events: parse_latency_latest(&latency_values),
+        error_stats: parse_error_stats(&info),
+        notes,
+    }
+}
+
+fn build_investigation_summary(nodes: &[NodeInvestigation]) -> InvestigationSummary {
+    let node_count = nodes.len() as u64;
+    let primary_count = nodes.iter().filter(|node| node.role == "master" || node.role == "primary").count() as u64;
+    let replica_count = nodes.iter().filter(|node| node.role == "slave" || node.role == "replica").count() as u64;
+    let connected_clients = nodes.iter().map(|node| node.connected_clients).sum();
+    let blocked_clients = nodes.iter().map(|node| node.blocked_clients).sum();
+    let ops_per_sec = nodes.iter().map(|node| node.ops_per_sec).sum();
+    let used_memory = nodes.iter().map(|node| node.used_memory).sum();
+    let max_memory = nodes.iter().map(|node| node.max_memory).sum();
+    let rejected_connections = nodes.iter().map(|node| node.rejected_connections).sum();
+    let evicted_keys = nodes.iter().map(|node| node.evicted_keys).sum();
+    let slow_log_count = nodes.iter().map(|node| node.slow_log.len() as u64).sum();
+    let latency_event_count = nodes.iter().map(|node| node.latency_events.len() as u64).sum();
+    let error_count = nodes
+        .iter()
+        .flat_map(|node| node.error_stats.iter())
+        .map(|err| err.count)
+        .sum();
+    let total_hits: f64 = nodes.iter().map(|node| node.hit_rate).sum();
+    let hit_rate = if node_count > 0 { total_hits / node_count as f64 } else { 0.0 };
+    let max_memory_policy = nodes
+        .iter()
+        .find_map(|node| if node.max_memory_policy.is_empty() { None } else { Some(node.max_memory_policy.clone()) })
+        .unwrap_or_default();
+
+    let mut pressure = 0u8;
+    if max_memory > 0 {
+        pressure = pressure.saturating_add(((used_memory as f64 / max_memory as f64) * 35.0).round() as u8);
+    }
+    if nodes.iter().any(|node| node.max_clients > 0 && node.connected_clients as f64 / node.max_clients as f64 > 0.8) {
+        pressure = pressure.saturating_add(20);
+    }
+    if blocked_clients > 0 {
+        pressure = pressure.saturating_add(15);
+    }
+    if nodes.iter().any(|node| node.mem_fragmentation_ratio > 1.5) {
+        pressure = pressure.saturating_add(10);
+    }
+    if evicted_keys > 0 {
+        pressure = pressure.saturating_add(10);
+    }
+    if latency_event_count > 0 || slow_log_count > 0 {
+        pressure = pressure.saturating_add(10);
+    }
+
+    InvestigationSummary {
+        node_count,
+        primary_count,
+        replica_count,
+        connected_clients,
+        blocked_clients,
+        ops_per_sec,
+        used_memory,
+        max_memory,
+        max_memory_policy,
+        hit_rate,
+        rejected_connections,
+        evicted_keys,
+        slow_log_count,
+        latency_event_count,
+        error_count,
+        pressure_score: pressure.min(100),
+    }
+}
+
+fn build_investigation_findings(
+    summary: &InvestigationSummary,
+    nodes: &[NodeInvestigation],
+    cluster_nodes: &[ClusterNode],
+) -> Vec<InvestigationFinding> {
+    let mut findings = Vec::new();
+
+    if summary.blocked_clients > 0 {
+        findings.push(InvestigationFinding {
+            level: "warning".to_string(),
+            node_id: None,
+            title: "Blocked clients".to_string(),
+            detail: format!("{} clients are blocked waiting on Redis operations.", summary.blocked_clients),
+        });
+    }
+
+    for node in nodes {
+        if node.max_clients > 0 && node.connected_clients as f64 / node.max_clients as f64 > 0.8 {
+            findings.push(InvestigationFinding {
+                level: "critical".to_string(),
+                node_id: Some(node.node_id.clone()),
+                title: "Client limit pressure".to_string(),
+                detail: format!("{} has {} of {} clients connected.", node.endpoint, node.connected_clients, node.max_clients),
+            });
+        }
+        if node.max_memory > 0 && node.used_memory as f64 / node.max_memory as f64 > 0.85 {
+            findings.push(InvestigationFinding {
+                level: "warning".to_string(),
+                node_id: Some(node.node_id.clone()),
+                title: "Memory near maxmemory".to_string(),
+                detail: format!("{} is using {} of {} bytes.", node.endpoint, node.used_memory, node.max_memory),
+            });
+        }
+        if node.mem_fragmentation_ratio > 1.5 {
+            findings.push(InvestigationFinding {
+                level: "warning".to_string(),
+                node_id: Some(node.node_id.clone()),
+                title: "High memory fragmentation".to_string(),
+                detail: format!("{} reports fragmentation ratio {:.2}.", node.endpoint, node.mem_fragmentation_ratio),
+            });
+        }
+        if node.rejected_connections > 0 {
+            findings.push(InvestigationFinding {
+                level: "warning".to_string(),
+                node_id: Some(node.node_id.clone()),
+                title: "Rejected connections".to_string(),
+                detail: format!("{} rejected {} connections.", node.endpoint, node.rejected_connections),
+            });
+        }
+        if node.total_query_buffer_bytes > 1024 * 1024 || node.total_output_buffer_bytes > 1024 * 1024 {
+            findings.push(InvestigationFinding {
+                level: "warning".to_string(),
+                node_id: Some(node.node_id.clone()),
+                title: "Client buffer pressure".to_string(),
+                detail: format!("{} has large aggregate client buffers.", node.endpoint),
+            });
+        }
+        if node.slow_log.iter().any(|entry| entry.duration_us > 100_000) {
+            findings.push(InvestigationFinding {
+                level: "critical".to_string(),
+                node_id: Some(node.node_id.clone()),
+                title: "Slow command over 100 ms".to_string(),
+                detail: format!("{} has recent slowlog entries above 100 ms.", node.endpoint),
+            });
+        }
+        if node.latency_events.iter().any(|event| event.max_ms > 100) {
+            findings.push(InvestigationFinding {
+                level: "warning".to_string(),
+                node_id: Some(node.node_id.clone()),
+                title: "Latency spike".to_string(),
+                detail: format!("{} reports a latency event above 100 ms.", node.endpoint),
+            });
+        }
+    }
+
+    for cluster_node in cluster_nodes {
+        if cluster_node.flags.contains("fail") || cluster_node.flags.contains("pfail") || cluster_node.link_state != "connected" {
+            findings.push(InvestigationFinding {
+                level: "critical".to_string(),
+                node_id: Some(cluster_node.id.clone()),
+                title: "Cluster node state".to_string(),
+                detail: format!("{} flags={} link={}", cluster_node.addr, cluster_node.flags, cluster_node.link_state),
+            });
+        }
+    }
+
+    findings
+}
+
+fn parse_info_map(info: &str) -> HashMap<String, String> {
+    info.lines()
+        .filter_map(|line| {
+            if line.is_empty() || line.starts_with('#') {
+                None
+            } else {
+                line.split_once(':').map(|(key, value)| (key.to_string(), value.trim().to_string()))
+            }
+        })
+        .collect()
+}
+
+fn map_u64(map: &HashMap<String, String>, key: &str) -> u64 {
+    map.get(key).and_then(|value| value.parse().ok()).unwrap_or(0)
+}
+
+fn map_i64(map: &HashMap<String, String>, key: &str) -> Option<i64> {
+    map.get(key).and_then(|value| value.parse().ok())
+}
+
+fn map_f64(map: &HashMap<String, String>, key: &str) -> f64 {
+    map.get(key).and_then(|value| value.parse().ok()).unwrap_or(0.0)
+}
+
+fn normalize_cluster_addr(addr: &str) -> String {
+    addr.split('@').next().unwrap_or(addr).to_string()
+}
+
+fn parse_latency_latest(value: &redis::Value) -> Vec<LatencyEvent> {
+    let redis::Value::Array(events) = value else {
+        return Vec::new();
+    };
+
+    events
+        .iter()
+        .filter_map(|event| {
+            let redis::Value::Array(parts) = event else {
+                return None;
+            };
+            if parts.len() < 4 {
+                return None;
+            }
+            Some(LatencyEvent {
+                event: value_as_string(&parts[0]).unwrap_or_default(),
+                latest_ms: value_as_u64(&parts[2]).unwrap_or(0),
+                max_ms: value_as_u64(&parts[3]).unwrap_or(0),
+            })
+        })
+        .collect()
+}
+
+fn value_as_u64(value: &redis::Value) -> Option<u64> {
+    match value {
+        redis::Value::Int(n) => (*n).try_into().ok(),
+        redis::Value::BulkString(bytes) => String::from_utf8_lossy(bytes).parse().ok(),
+        redis::Value::SimpleString(s) => s.parse().ok(),
+        _ => None,
     }
 }
 

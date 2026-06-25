@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Pencil } from "lucide-react";
+import { Network, Pencil } from "lucide-react";
 import type { RedisServer } from "@/types";
 
 interface EditServerDialogProps {
@@ -20,6 +20,7 @@ export function EditServerDialog({ server, open, onOpenChange, onSave }: EditSer
   const [password, setPassword] = useState("");
   const [db, setDb] = useState("0");
   const [tls, setTls] = useState(false);
+  const [connectionMode, setConnectionMode] = useState<"standalone" | "cluster">("standalone");
 
   useEffect(() => {
     if (server) {
@@ -30,6 +31,7 @@ export function EditServerDialog({ server, open, onOpenChange, onSave }: EditSer
       setPassword(server.password || "");
       setDb(String(server.db || 0));
       setTls(server.tls || false);
+      setConnectionMode(server.connectionMode || "standalone");
     }
   }, [server]);
 
@@ -44,8 +46,9 @@ export function EditServerDialog({ server, open, onOpenChange, onSave }: EditSer
       port: parseInt(port, 10),
       username: username || undefined,
       password: password || undefined,
-      db: parseInt(db, 10),
+      db: connectionMode === "cluster" ? 0 : parseInt(db, 10),
       tls,
+      connectionMode,
     });
     onOpenChange(false);
   };
@@ -120,6 +123,7 @@ export function EditServerDialog({ server, open, onOpenChange, onSave }: EditSer
                 onChange={(e) => setDb(e.target.value)}
                 min="0"
                 max="15"
+                disabled={connectionMode === "cluster"}
               />
             </div>
             <div className="space-y-2 flex items-end">
@@ -132,6 +136,29 @@ export function EditServerDialog({ server, open, onOpenChange, onSave }: EditSer
                 />
                 <span className="text-sm font-medium">Use TLS/SSL</span>
               </label>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Connection Mode</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setConnectionMode("standalone")}
+                className={`flex items-center justify-center gap-2 rounded-lg border p-2 text-sm font-medium transition-colors ${connectionMode === "standalone" ? "bg-primary text-primary-foreground border-primary" : "bg-secondary/50 hover:bg-secondary"}`}
+              >
+                Standalone
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConnectionMode("cluster");
+                  setDb("0");
+                }}
+                className={`flex items-center justify-center gap-2 rounded-lg border p-2 text-sm font-medium transition-colors ${connectionMode === "cluster" ? "bg-primary text-primary-foreground border-primary" : "bg-secondary/50 hover:bg-secondary"}`}
+              >
+                <Network className="h-4 w-4" />
+                Cluster
+              </button>
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-4">

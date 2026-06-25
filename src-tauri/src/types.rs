@@ -11,6 +11,14 @@ pub struct RedisServer {
     pub password: Option<String>,
     pub db: Option<u8>,
     pub tls: Option<bool>,
+    pub connection_mode: Option<RedisConnectionMode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RedisConnectionMode {
+    Standalone,
+    Cluster,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -445,6 +453,95 @@ pub struct ClientAnomaly {
     pub client_addr: String,
     pub details: String,
     pub severity: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RedisInvestigation {
+    pub generated_at: u64,
+    pub summary: InvestigationSummary,
+    pub nodes: Vec<NodeInvestigation>,
+    pub findings: Vec<InvestigationFinding>,
+    pub cluster_nodes: Vec<ClusterNode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestigationSummary {
+    pub node_count: u64,
+    pub primary_count: u64,
+    pub replica_count: u64,
+    pub connected_clients: u64,
+    pub blocked_clients: u64,
+    pub ops_per_sec: u64,
+    pub used_memory: u64,
+    pub max_memory: u64,
+    pub max_memory_policy: String,
+    pub hit_rate: f64,
+    pub rejected_connections: u64,
+    pub evicted_keys: u64,
+    pub slow_log_count: u64,
+    pub latency_event_count: u64,
+    pub error_count: u64,
+    pub pressure_score: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeInvestigation {
+    pub node_id: String,
+    pub endpoint: String,
+    pub role: String,
+    pub cluster_flags: Vec<String>,
+    pub connected_clients: u64,
+    pub blocked_clients: u64,
+    pub max_clients: u64,
+    pub used_memory: u64,
+    pub used_memory_human: String,
+    pub max_memory: u64,
+    pub max_memory_policy: String,
+    pub mem_fragmentation_ratio: f64,
+    pub ops_per_sec: u64,
+    pub instantaneous_input_kbps: f64,
+    pub instantaneous_output_kbps: f64,
+    pub hit_rate: f64,
+    pub total_commands_processed: u64,
+    pub rejected_connections: u64,
+    pub evicted_keys: u64,
+    pub expired_keys: u64,
+    pub connected_replicas: u64,
+    pub replication_lag_seconds: Option<i64>,
+    pub client_recent_max_input_buffer: u64,
+    pub client_recent_max_output_buffer: u64,
+    pub total_query_buffer_bytes: u64,
+    pub total_output_buffer_bytes: u64,
+    pub total_output_list_items: u64,
+    pub avg_client_idle_seconds: f64,
+    pub max_client_idle_seconds: u64,
+    pub clients_by_command: Vec<CommandClientInfo>,
+    pub top_clients: Vec<ClientInfo>,
+    pub command_stats: Vec<CommandStat>,
+    pub slow_log: Vec<SlowLogEntry>,
+    pub latency_events: Vec<LatencyEvent>,
+    pub error_stats: Vec<ErrorStat>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LatencyEvent {
+    pub event: String,
+    pub latest_ms: u64,
+    pub max_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestigationFinding {
+    pub level: String,
+    pub node_id: Option<String>,
+    pub title: String,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

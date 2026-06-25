@@ -30,35 +30,40 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Bump version before build
         id: bump_version
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
+            npm run version:sync -- "$VERSION"
           else
-            CURRENT=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+            CURRENT=$(node -p "require('./package.json').version")
             
             if git rev-parse "v${CURRENT}" >/dev/null 2>&1; then
-              MAJOR=$(echo $CURRENT | cut -d. -f1)
-              MINOR=$(echo $CURRENT | cut -d. -f2)
-              PATCH=$(echo $CURRENT | cut -d. -f3)
-              NEW_PATCH=$((PATCH + 1))
-              VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+              VERSION=$(npm run --silent version:patch)
               echo "Auto-incrementing version from $CURRENT to $VERSION"
-              
-              sed -i "s/^version = \"$CURRENT\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-              sed -i "s/\"version\": \"$CURRENT\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-              sed -i "s/\"version\": \"$CURRENT\"/\"version\": \"$VERSION\"/" package.json
-              
-              git config --local user.email "github-actions[bot]@users.noreply.github.com"
-              git config --local user.name "github-actions[bot]"
-              git add src-tauri/Cargo.toml src-tauri/tauri.conf.json package.json
-              git commit -m "chore: bump version to $VERSION [skip ci]"
-              git push origin main
             else
               VERSION=$CURRENT
             fi
           fi
+
+          npm run version:check
+          npm install --package-lock-only --ignore-scripts
+          npm run version:check
+
+          if ! git diff --quiet; then
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/tauri.conf.json
+            git commit -m "chore: bump version to $VERSION [skip ci]"
+            git push origin main
+          fi
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "commit_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
@@ -130,8 +135,22 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Verify updater signing secret
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY is not configured."
+            echo "Generate an updater signing key locally, commit only the public key to tauri.conf.json, and store the private key in GitHub Actions secrets."
+            echo "Auto-update releases cannot be produced without signed updater artifacts."
+            exit 1
+          fi
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
       - name: Build Tauri app
         run: npm run tauri build -- ${{ matrix.args }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Ad-hoc sign macOS app
         if: matrix.platform == 'macos-latest'
@@ -154,7 +173,19 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: redis-tics-${{ matrix.name }}-dmg
-          path: ${{ matrix.bundle_path }}/dmg/*.dmg
+          path: |
+            ${{ matrix.bundle_path }}/dmg/*.dmg
+            ${{ matrix.bundle_path }}/dmg/*.dmg.sig
+          if-no-files-found: warn
+
+      - name: Upload macOS updater archive
+        if: matrix.platform == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: redis-tics-${{ matrix.name }}-updater
+          path: |
+            ${{ matrix.bundle_path }}/macos/*.tar.gz
+            ${{ matrix.bundle_path }}/macos/*.tar.gz.sig
           if-no-files-found: warn
 
       - name: Upload Linux DEB
@@ -170,7 +201,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: redis-tics-${{ matrix.name }}-appimage
-          path: ${{ matrix.bundle_path }}/appimage/*.AppImage
+          path: |
+            ${{ matrix.bundle_path }}/appimage/*.AppImage
+            ${{ matrix.bundle_path }}/appimage/*.AppImage.sig
           if-no-files-found: warn
 
       - name: Upload Windows MSI
@@ -178,7 +211,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: redis-tics-${{ matrix.name }}-msi
-          path: ${{ matrix.bundle_path }}/msi/*.msi
+          path: |
+            ${{ matrix.bundle_path }}/msi/*.msi
+            ${{ matrix.bundle_path }}/msi/*.msi.sig
           if-no-files-found: warn
 
       - name: Upload Windows NSIS
@@ -186,7 +221,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: redis-tics-${{ matrix.name }}-nsis
-          path: ${{ matrix.bundle_path }}/nsis/*.exe
+          path: |
+            ${{ matrix.bundle_path }}/nsis/*.exe
+            ${{ matrix.bundle_path }}/nsis/*.exe.sig
           if-no-files-found: warn
 
   release:
@@ -226,6 +263,8 @@ jobs:
           # Copy and rename files for clarity
           find artifacts -name "*.dmg" -exec cp {} release-files/ \;
           find artifacts -name "*.dmg.sig" -exec cp {} release-files/ \;
+          find artifacts -name "*.tar.gz" -exec cp {} release-files/ \;
+          find artifacts -name "*.tar.gz.sig" -exec cp {} release-files/ \;
           find artifacts -name "*.deb" -exec cp {} release-files/ \;
           find artifacts -name "*.deb.sig" -exec cp {} release-files/ \;
           find artifacts -name "*.AppImage" -exec cp {} release-files/ \;
@@ -254,11 +293,22 @@ jobs:
           SIG_MAC_X64=""
           SIG_LINUX_APPIMAGE=""
           SIG_WINDOWS_MSI=""
+          MAC_ARM_FILE="Redis.Tics_${VERSION}_aarch64.app.tar.gz"
+          MAC_X64_FILE="Redis.Tics_${VERSION}_x64.app.tar.gz"
+          LINUX_FILE="Redis.Tics_${VERSION}_amd64.AppImage"
+          WINDOWS_FILE="Redis.Tics_${VERSION}_x64-setup.msi"
 
-          [ -f "release-files/Redis.Tics_${VERSION}_aarch64.dmg.sig" ] && SIG_MAC_ARM=$(cat "release-files/Redis.Tics_${VERSION}_aarch64.dmg.sig")
-          [ -f "release-files/Redis.Tics_${VERSION}_x64.dmg.sig" ] && SIG_MAC_X64=$(cat "release-files/Redis.Tics_${VERSION}_x64.dmg.sig")
-          [ -f "release-files/Redis.Tics_${VERSION}_amd64.AppImage.sig" ] && SIG_LINUX_APPIMAGE=$(cat "release-files/Redis.Tics_${VERSION}_amd64.AppImage.sig")
-          [ -f "release-files/Redis.Tics_${VERSION}_x64-setup.msi.sig" ] && SIG_WINDOWS_MSI=$(cat "release-files/Redis.Tics_${VERSION}_x64-setup.msi.sig")
+          [ -f "release-files/${MAC_ARM_FILE}.sig" ] && SIG_MAC_ARM=$(cat "release-files/${MAC_ARM_FILE}.sig")
+          [ -f "release-files/${MAC_X64_FILE}.sig" ] && SIG_MAC_X64=$(cat "release-files/${MAC_X64_FILE}.sig")
+          [ -f "release-files/${LINUX_FILE}.sig" ] && SIG_LINUX_APPIMAGE=$(cat "release-files/${LINUX_FILE}.sig")
+          [ -f "release-files/${WINDOWS_FILE}.sig" ] && SIG_WINDOWS_MSI=$(cat "release-files/${WINDOWS_FILE}.sig")
+
+          for required in "${MAC_ARM_FILE}" "${MAC_ARM_FILE}.sig" "${MAC_X64_FILE}" "${MAC_X64_FILE}.sig" "${LINUX_FILE}" "${LINUX_FILE}.sig" "${WINDOWS_FILE}" "${WINDOWS_FILE}.sig"; do
+            if [ ! -f "release-files/${required}" ]; then
+              echo "Missing updater artifact: release-files/${required}"
+              exit 1
+            fi
+          done
           
           cat > release-files/latest.json << EOF
           {
@@ -268,24 +318,28 @@ jobs:
             "platforms": {
               "darwin-aarch64": {
                 "signature": "${SIG_MAC_ARM}",
-                "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_aarch64.dmg"
+                "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/${MAC_ARM_FILE}"
               },
               "darwin-x86_64": {
                 "signature": "${SIG_MAC_X64}",
-                "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_x64.dmg"
+                "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/${MAC_X64_FILE}"
               },
               "linux-x86_64": {
                 "signature": "${SIG_LINUX_APPIMAGE}",
-                "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_amd64.AppImage"
+                "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/${LINUX_FILE}"
               },
               "windows-x86_64": {
                 "signature": "${SIG_WINDOWS_MSI}",
-                "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/Redis.Tics_${VERSION}_x64-setup.msi"
+                "url": "https://github.com/pritamsso/redis-tics/releases/download/v${VERSION}/${WINDOWS_FILE}"
               }
             }
           }
           EOF
           
+          jq -e '
+            .version and .platforms and
+            (.platforms | to_entries | all(.value.url != "" and .value.signature != ""))
+          ' release-files/latest.json
           echo "Generated latest.json for auto-updater"
 
       - name: Generate changelog

@@ -579,7 +579,7 @@ export function AnalyticsPanel({ serverId }: AnalyticsPanelProps) {
                               <div className="flex gap-1">
                                 {node.flags.split(",").map((flag) => (
                                   <Badge key={flag} variant={flag.includes("master") ? "default" : "secondary"} className="text-xs">
-                                    {flag}
+                                    {flag === "master" ? "primary" : flag === "slave" ? "replica" : flag}
                                   </Badge>
                                 ))}
                               </div>
