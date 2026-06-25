@@ -487,6 +487,7 @@ jobs:
           # Reset any other unstaged changes to ensure clean state
           echo "🧹 Ensuring clean git state..."
           git diff --name-only -z -- . ':(exclude)docs/releases.json' | xargs -0 -r git checkout --
+          rm -rf RELEASE_NOTES.md artifacts release-files
           git status --short
           
           # Commit changes
@@ -518,5 +519,5 @@ jobs:
           
           # Push changes
           echo "📤 Pushing changes..."
-          git push origin main
+          git push origin HEAD:main
           echo "✅ Updated releases.json and pushed to repository"
