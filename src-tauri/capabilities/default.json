@@ -9,6 +9,6 @@
     "core:default",
     "shell:default",
     "updater:default",
-    "process:allow-relaunch"
+    "process:allow-restart"
   ]
 }
