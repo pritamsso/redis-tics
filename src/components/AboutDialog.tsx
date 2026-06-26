@@ -17,7 +17,7 @@ import {
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
-import { open } from "@tauri-apps/plugin-shell";
+import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { isTauriRuntime } from "@/lib/tauriRuntime";
 
 interface AboutDialogProps {
@@ -158,7 +158,7 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
           <div className="pt-4 border-t space-y-3">
             <button
               onClick={() => {
-                open("https://redistics.com").catch(console.error);
+                openUrl("https://redistics.com").catch(console.error);
               }}
               className="w-full flex items-center gap-3 p-3 rounded-lg bg-secondary hover:bg-secondary/80 active:scale-[0.98] transition-all cursor-pointer"
             >
@@ -176,7 +176,7 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
 
             <button
               onClick={() => {
-                open("https://github.com/pritamsso/redis-tics").catch(
+                openUrl("https://github.com/pritamsso/redis-tics").catch(
                   console.error
                 );
               }}
@@ -194,7 +194,7 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
 
             <button
               onClick={() => {
-                open("https://github.com/pritamsso").catch(console.error);
+                openUrl("https://github.com/pritamsso").catch(console.error);
               }}
               className="w-full flex items-center gap-3 p-3 rounded-lg bg-secondary hover:bg-secondary/80 active:scale-[0.98] transition-all cursor-pointer"
             >
@@ -284,9 +284,9 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
               Made with ❤️ by
               <button
                 onClick={() => {
-                  open("https://github.com/pritamsso").catch(console.error);
-                }}
-                className="text-red-500 hover:underline font-medium cursor-pointer active:opacity-70 transition-opacity"
+                openUrl("https://github.com/pritamsso").catch(console.error);
+              }}
+              className="text-red-500 hover:underline font-medium cursor-pointer active:opacity-70 transition-opacity"
               >
                 @pritamsso
               </button>
