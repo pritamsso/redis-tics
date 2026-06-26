@@ -367,7 +367,21 @@ jobs:
       - name: Verify updater signatures
         shell: bash
         run: |
-          sudo apt-get install -y -q minisign
+          MINISIGN_VERSION=0.12
+          curl -fsSL \
+            "https://github.com/jedisct1/minisign/releases/download/${MINISIGN_VERSION}/minisign-${MINISIGN_VERSION}-linux.tar.gz" \
+            -o /tmp/minisign.tar.gz
+
+          # Extract and locate the binary regardless of archive directory structure
+          tar -xzf /tmp/minisign.tar.gz -C /tmp/
+          MINISIGN_BIN=$(find /tmp -maxdepth 5 -name "minisign" -type f 2>/dev/null | sort | head -1)
+          if [ -z "$MINISIGN_BIN" ]; then
+            echo "ERROR: minisign binary not found after extraction. Archive contents:"
+            tar tzf /tmp/minisign.tar.gz
+            exit 1
+          fi
+          chmod +x "$MINISIGN_BIN"
+          echo "Using minisign at: $MINISIGN_BIN"
 
           jq -r '.plugins.updater.pubkey' src-tauri/tauri.conf.json | base64 -d > /tmp/redis-tics-updater.pub
 
@@ -376,7 +390,7 @@ jobs:
             local sig="${file}.sig"
 
             echo "Verifying ${file}"
-            minisign -Vm "${file}" -x "${sig}" -p /tmp/redis-tics-updater.pub
+            "$MINISIGN_BIN" -Vm "${file}" -x "${sig}" -p /tmp/redis-tics-updater.pub
           }
 
           VERSION="${{ steps.get_version.outputs.version }}"
