@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTheme } from "@/hooks/useTheme";
 import { Sidebar } from "@/components/Sidebar";
 import { AddServerDialog } from "@/components/AddServerDialog";
 import { EditServerDialog } from "@/components/EditServerDialog";
@@ -28,6 +29,7 @@ function App() {
   const [serverToEdit, setServerToEdit] = useState<RedisServer | null>(null);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [showAbout, setShowAbout] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
   const {
     servers,
@@ -83,6 +85,8 @@ function App() {
         onSelectServer={handleSelectServer}
         onAddServer={() => setShowAddServer(true)}
         onAboutOpen={() => setShowAbout(true)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
         onEditServer={async (server) => {
           let decryptedServer = { ...server };
           if (server.password && isTauriRuntime()) {

@@ -97,6 +97,12 @@ jobs:
       skip_build: ${{ steps.check.outputs.skip_build }}
       artifacts_run_id: ${{ steps.check.outputs.artifacts_run_id }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare-version.outputs.commit_sha }}
+
       - name: Check for reusable build artifacts
         id: check
         env:
@@ -104,11 +110,13 @@ jobs:
         run: |
           VERSION="${{ needs.prepare-version.outputs.version }}"
           FORCE_REBUILD="${{ github.event.inputs.force_rebuild }}"
+          CURRENT_SHA="${{ needs.prepare-version.outputs.commit_sha }}"
 
           echo "## Pipeline Intelligence" >> $GITHUB_STEP_SUMMARY
           echo "| | |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Version | \`v${VERSION}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${CURRENT_SHA:0:8}\` |" >> $GITHUB_STEP_SUMMARY
 
           # ── force_rebuild overrides everything ──────────────────────────
           if [ "$FORCE_REBUILD" = "true" ]; then
@@ -136,7 +144,12 @@ jobs:
             "redis-tics-Windows-msi"
           )
 
-          # GNU date (Linux runner) — fallback not needed but kept for clarity
+          # Files/paths whose changes do NOT require a fresh build.
+          # Anything outside this list (src/, src-tauri/, package files, etc.)
+          # is considered build-affecting and will trigger a fresh build.
+          NON_BUILD_PATTERN='^(\.github/|docs/|[^/]*\.md$|[^/]*\.txt$|LICENSE|CHANGELOG|\.gitignore|\.gitattributes)'
+
+          # GNU date (Linux runner)
           CUTOFF=$(date -u -d "24 hours ago" +%Y-%m-%dT%H:%M:%SZ)
 
           ARTIFACTS_RUN_ID=""
@@ -163,17 +176,56 @@ jobs:
                 fi
               done
 
-              if [ "$HAS_ALL" = "true" ]; then
+              [ "$HAS_ALL" = "false" ] && continue
+
+              # ── Artifacts exist — now check if source code changed ──────
+              # Get the commit SHA the candidate run was built from
+              RUN_SHA=$(gh api "repos/${{ github.repository }}/actions/runs/${RUN_ID}" \
+                --jq '.head_sha' 2>/dev/null || echo "")
+
+              if [ -z "$RUN_SHA" ]; then
+                echo "  ↳ Could not get SHA for run ${RUN_ID} — skipping"
+                continue
+              fi
+
+              if [ "$RUN_SHA" = "$CURRENT_SHA" ]; then
+                # Same commit — artifacts are 100% reusable
                 ARTIFACTS_RUN_ID=$RUN_ID
+                echo "| Candidate run | [${RUN_ID}](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}) |" >> $GITHUB_STEP_SUMMARY
+                echo "| SHA match | \`${RUN_SHA:0:8}\` == \`${CURRENT_SHA:0:8}\` — identical commit |" >> $GITHUB_STEP_SUMMARY
                 break 2
               fi
+
+              # Different commits — check which files changed
+              CHANGED_FILES=$(git diff --name-only "$RUN_SHA" "$CURRENT_SHA" 2>/dev/null || echo "")
+
+              BUILD_CHANGED=false
+              CHANGED_BUILD_FILE=""
+              while IFS= read -r file; do
+                [ -z "$file" ] && continue
+                if ! echo "$file" | grep -qE "$NON_BUILD_PATTERN"; then
+                  BUILD_CHANGED=true
+                  CHANGED_BUILD_FILE="$file"
+                  break
+                fi
+              done <<< "$CHANGED_FILES"
+
+              if [ "$BUILD_CHANGED" = "true" ]; then
+                echo "  ↳ Run ${RUN_ID} (${RUN_SHA:0:8}) — code changed (e.g. ${CHANGED_BUILD_FILE}) — skipping"
+                continue
+              fi
+
+              # Only non-build files changed (docs/workflows) — safe to reuse
+              ARTIFACTS_RUN_ID=$RUN_ID
+              echo "| Candidate run | [${RUN_ID}](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}) |" >> $GITHUB_STEP_SUMMARY
+              echo "| SHA diff | \`${RUN_SHA:0:8}\` → \`${CURRENT_SHA:0:8}\` (non-build changes only) |" >> $GITHUB_STEP_SUMMARY
+              break 2
             done
           done
 
           if [ -n "$ARTIFACTS_RUN_ID" ]; then
             echo "artifacts_run_id=${ARTIFACTS_RUN_ID}" >> $GITHUB_OUTPUT
             echo "skip_build=true" >> $GITHUB_OUTPUT
-            echo "| Previous run | [$ARTIFACTS_RUN_ID](https://github.com/${{ github.repository }}/actions/runs/${ARTIFACTS_RUN_ID}) |" >> $GITHUB_STEP_SUMMARY
             echo "| Decision | **Skipping build** — reusing artifacts from the run above |" >> $GITHUB_STEP_SUMMARY
           else
             echo "artifacts_run_id=" >> $GITHUB_OUTPUT

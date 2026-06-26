@@ -1,6 +1,34 @@
 @import "tailwindcss";
 
+/* ── Light theme (default) ─────────────────────────────────────────────── */
 :root {
+  --background: 0 0% 98%;
+  --foreground: 222.2 47.4% 11.2%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 47.4% 11.2%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 47.4% 11.2%;
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 40% 94%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 210 40% 94%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 94%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214.3 31.8% 88%;
+  --input: 214.3 31.8% 88%;
+  --ring: 224.3 76.3% 48%;
+  --radius: 0.5rem;
+  --success: 142.1 76.2% 36.3%;
+  --warning: 47.9 95.8% 43%;
+  --redis: 6 78% 57%;
+}
+
+/* ── Dark theme ─────────────────────────────────────────────────────────── */
+.dark {
   --background: 222.2 84% 4.9%;
   --foreground: 210 40% 98%;
   --card: 222.2 84% 4.9%;
@@ -20,7 +48,6 @@
   --border: 217.2 32.6% 17.5%;
   --input: 217.2 32.6% 17.5%;
   --ring: 224.3 76.3% 48%;
-  --radius: 0.5rem;
   --success: 142.1 76.2% 36.3%;
   --warning: 47.9 95.8% 53.1%;
   --redis: 6 78% 57%;

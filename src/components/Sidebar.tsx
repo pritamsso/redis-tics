@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Plug, Unplug, Heart, Github, Pencil } from "lucide-react";
+import { Plus, Trash2, Plug, Unplug, Heart, Github, Pencil, Sun, Moon } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { getVersion } from "@tauri-apps/api/app";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { RedisServer, ConnectionState } from "@/types";
+import type { Theme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 import { isTauriRuntime } from "@/lib/tauriRuntime";
 
@@ -20,6 +21,8 @@ interface SidebarProps {
   onConnect: (id: string) => void;
   onDisconnect: (id: string) => void;
   onAboutOpen: () => void;
+  theme: Theme;
+  onToggleTheme: () => void;
 }
 
 export function Sidebar({
@@ -33,6 +36,8 @@ export function Sidebar({
   onConnect,
   onDisconnect,
   onAboutOpen,
+  theme,
+  onToggleTheme,
 }: SidebarProps) {
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
 
@@ -204,21 +209,35 @@ export function Sidebar({
           </div>
         </div>
 
-        {/* Version badge — click opens About dialog */}
-        {currentVersion && (
+        {/* Version badge + theme toggle row */}
+        <div className="flex items-center gap-2">
+          {currentVersion && (
+            <button
+              onClick={onAboutOpen}
+              title="About Redis Tics"
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/60 bg-secondary/50 hover:bg-secondary hover:border-primary/40 active:scale-[0.98] transition-all group"
+            >
+              <span className="text-[11px] text-muted-foreground group-hover:text-foreground transition-colors font-mono">
+                v{currentVersion}
+              </span>
+              <span className="text-[10px] text-muted-foreground/60 group-hover:text-muted-foreground transition-colors">
+                • About
+              </span>
+            </button>
+          )}
+
           <button
-            onClick={onAboutOpen}
-            title="About Redis Tics"
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/60 bg-secondary/50 hover:bg-secondary hover:border-primary/40 active:scale-[0.98] transition-all group"
+            onClick={onToggleTheme}
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            className="flex items-center justify-center w-8 h-8 rounded-lg border border-border/60 bg-secondary/50 hover:bg-secondary hover:border-primary/40 active:scale-[0.98] transition-all text-muted-foreground hover:text-foreground"
           >
-            <span className="text-[11px] text-muted-foreground group-hover:text-foreground transition-colors font-mono">
-              v{currentVersion}
-            </span>
-            <span className="text-[10px] text-muted-foreground/60 group-hover:text-muted-foreground transition-colors">
-              • About
-            </span>
+            {theme === "dark" ? (
+              <Sun className="h-3.5 w-3.5" />
+            ) : (
+              <Moon className="h-3.5 w-3.5" />
+            )}
           </button>
-        )}
+        </div>
       </div>
     </div>
   );
