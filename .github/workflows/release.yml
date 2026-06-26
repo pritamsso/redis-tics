@@ -25,13 +25,13 @@ jobs:
       commit_sha: ${{ steps.bump_version.outputs.commit_sha }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '24'
 
@@ -77,13 +77,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest'
+          - platform: 'macos-15'
             args: '--target aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'
             name: 'macOS-ARM64'
             rust_target: 'aarch64-apple-darwin'
             bundle_path: 'src-tauri/target/aarch64-apple-darwin/release/bundle'
-          - platform: 'macos-latest'
+          - platform: 'macos-15'
             args: '--target x86_64-apple-darwin'
             target: 'x86_64-apple-darwin'
             name: 'macOS-Intel'
@@ -105,7 +105,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.prepare-version.outputs.commit_sha }}
 
@@ -117,7 +117,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: 'npm'
@@ -156,7 +156,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Ad-hoc sign macOS app
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-15'
         shell: bash
         run: |
           # Find and ad-hoc sign the app bundle to reduce Gatekeeper issues
@@ -173,8 +173,8 @@ jobs:
           find ${{ matrix.bundle_path }} -type f 2>/dev/null || echo "Bundle path not found"
 
       - name: Upload macOS DMG
-        if: matrix.platform == 'macos-latest'
-        uses: actions/upload-artifact@v4
+        if: matrix.platform == 'macos-15'
+        uses: actions/upload-artifact@v5
         with:
           name: redis-tics-${{ matrix.name }}-dmg
           path: |
@@ -183,8 +183,8 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload macOS updater archive
-        if: matrix.platform == 'macos-latest'
-        uses: actions/upload-artifact@v4
+        if: matrix.platform == 'macos-15'
+        uses: actions/upload-artifact@v5
         with:
           name: redis-tics-${{ matrix.name }}-updater
           path: |
@@ -194,7 +194,7 @@ jobs:
 
       - name: Upload Linux DEB
         if: matrix.platform == 'ubuntu-22.04'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: redis-tics-${{ matrix.name }}-deb
           path: ${{ matrix.bundle_path }}/deb/*.deb
@@ -202,7 +202,7 @@ jobs:
 
       - name: Upload Linux AppImage
         if: matrix.platform == 'ubuntu-22.04'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: redis-tics-${{ matrix.name }}-appimage
           path: |
@@ -212,7 +212,7 @@ jobs:
 
       - name: Upload Windows MSI
         if: matrix.platform == 'windows-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: redis-tics-${{ matrix.name }}-msi
           path: |
@@ -222,7 +222,7 @@ jobs:
 
       - name: Upload Windows NSIS
         if: matrix.platform == 'windows-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: redis-tics-${{ matrix.name }}-nsis
           path: |
@@ -237,7 +237,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ needs.prepare-version.outputs.commit_sha }}
@@ -252,7 +252,7 @@ jobs:
           echo "Using version: $VERSION"
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts
 
@@ -367,10 +367,7 @@ jobs:
       - name: Verify updater signatures
         shell: bash
         run: |
-          MINISIGN_VERSION=0.12
-          curl -fsSL -o /tmp/minisign.tar.gz "https://github.com/jedisct1/minisign/releases/download/${MINISIGN_VERSION}/minisign-${MINISIGN_VERSION}-linux.tar.gz"
-          tar -xzf /tmp/minisign.tar.gz -C /tmp
-          chmod +x /tmp/minisign
+          sudo apt-get install -y -q minisign
 
           jq -r '.plugins.updater.pubkey' src-tauri/tauri.conf.json | base64 -d > /tmp/redis-tics-updater.pub
 
@@ -379,7 +376,7 @@ jobs:
             local sig="${file}.sig"
 
             echo "Verifying ${file}"
-            /tmp/minisign -Vm "${file}" -x "${sig}" -p /tmp/redis-tics-updater.pub
+            minisign -Vm "${file}" -x "${sig}" -p /tmp/redis-tics-updater.pub
           }
 
           VERSION="${{ steps.get_version.outputs.version }}"
