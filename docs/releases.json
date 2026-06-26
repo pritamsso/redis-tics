@@ -1,6 +1,25 @@
 {
-  "latest": "1.0.9",
+  "latest": "1.0.10",
   "releases": [
+    {
+      "version": "1.0.10",
+      "date": "2026-06-26",
+      "title": "Redis Tics v1.0.10",
+      "description": "New release of Redis Tics with improvements and fixes",
+      "changes": [
+        "fix: correct Tauri process permission from allow-relaunch to allow-restart",
+        "fix: rename shell open import to openUrl to avoid shadowing open prop",
+        "feat: smart pipeline artifact reuse + light/dark theme toggle"
+      ],
+      "downloads": {
+        "macos_arm": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.10/Redis.Tics_1.0.10_aarch64.dmg",
+        "macos_intel": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.10/Redis.Tics_1.0.10_x64.dmg",
+        "windows_msi": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.10/Redis.Tics_1.0.10_x64-setup.msi",
+        "windows_exe": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.10/Redis.Tics_1.0.10_x64-setup.exe",
+        "linux_deb": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.10/redis-tics_1.0.10_amd64.deb",
+        "linux_appimage": "https://github.com/pritamsso/redis-tics/releases/download/v1.0.10/Redis.Tics_1.0.10_amd64.AppImage"
+      }
+    },
     {
       "version": "1.0.9",
       "date": "2026-06-26",
