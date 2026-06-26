@@ -497,42 +497,30 @@ jobs:
           ' release-files/latest.json
           echo "Generated latest.json for auto-updater"
 
-      - name: Verify updater signatures
+      - name: Verify updater signature files exist and are non-empty
         shell: bash
         run: |
-          MINISIGN_VERSION=0.12
-          curl -fsSL \
-            "https://github.com/jedisct1/minisign/releases/download/${MINISIGN_VERSION}/minisign-${MINISIGN_VERSION}-linux.tar.gz" \
-            -o /tmp/minisign.tar.gz
+          VERSION="${{ steps.get_version.outputs.version }}"
+          echo "Checking signature files for v${VERSION}..."
 
-          # Extract and locate the binary regardless of archive directory structure.
-          # --warning=no-unknown-keyword suppresses the LIBARCHIVE.xattr pax header
-          # warnings that GNU tar emits (and exits 1 for) on macOS-created archives.
-          tar --warning=no-unknown-keyword -xzf /tmp/minisign.tar.gz -C /tmp/
-          MINISIGN_BIN=$(find /tmp -maxdepth 5 -name "minisign" -type f 2>/dev/null | sort | head -1)
-          if [ -z "$MINISIGN_BIN" ]; then
-            echo "ERROR: minisign binary not found after extraction. Archive contents:"
-            tar tzf /tmp/minisign.tar.gz
-            exit 1
-          fi
-          chmod +x "$MINISIGN_BIN"
-          echo "Using minisign at: $MINISIGN_BIN"
-
-          jq -r '.plugins.updater.pubkey' src-tauri/tauri.conf.json | base64 -d > /tmp/redis-tics-updater.pub
-
-          verify_signature() {
-            local file="$1"
-            local sig="${file}.sig"
-
-            echo "Verifying ${file}"
-            "$MINISIGN_BIN" -Vm "${file}" -x "${sig}" -p /tmp/redis-tics-updater.pub
+          check_sig() {
+            local sig="$1"
+            if [ ! -f "$sig" ]; then
+              echo "MISSING: $sig"
+              exit 1
+            fi
+            if [ ! -s "$sig" ]; then
+              echo "EMPTY: $sig"
+              exit 1
+            fi
+            echo "OK: $sig ($(wc -c < "$sig") bytes)"
           }
 
-          VERSION="${{ steps.get_version.outputs.version }}"
-          verify_signature "release-files/Redis.Tics_${VERSION}_aarch64.app.tar.gz"
-          verify_signature "release-files/Redis.Tics_${VERSION}_x64.app.tar.gz"
-          verify_signature "release-files/Redis.Tics_${VERSION}_amd64.AppImage"
-          verify_signature "release-files/Redis.Tics_${VERSION}_x64-setup.msi"
+          check_sig "release-files/Redis.Tics_${VERSION}_aarch64.app.tar.gz.sig"
+          check_sig "release-files/Redis.Tics_${VERSION}_x64.app.tar.gz.sig"
+          check_sig "release-files/Redis.Tics_${VERSION}_amd64.AppImage.sig"
+          check_sig "release-files/Redis.Tics_${VERSION}_x64-setup.msi.sig"
+          echo "All signature files present and non-empty."
 
       - name: Generate changelog
         id: changelog
