@@ -27,6 +27,7 @@ function App() {
   const [showEditServer, setShowEditServer] = useState(false);
   const [serverToEdit, setServerToEdit] = useState<RedisServer | null>(null);
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [showAbout, setShowAbout] = useState(false);
 
   const {
     servers,
@@ -81,6 +82,7 @@ function App() {
         connectionStates={connectionStates}
         onSelectServer={handleSelectServer}
         onAddServer={() => setShowAddServer(true)}
+        onAboutOpen={() => setShowAbout(true)}
         onEditServer={async (server) => {
           let decryptedServer = { ...server };
           if (server.password && isTauriRuntime()) {
@@ -165,7 +167,6 @@ function App() {
                     <RefreshCw className="h-4 w-4" />
                     Refresh
                   </Button>
-                  <AboutDialog />
                 </div>
               </div>
             </header>
@@ -238,6 +239,7 @@ function App() {
         onOpenChange={setShowEditServer}
         onSave={updateServer}
       />
+      <AboutDialog open={showAbout} onOpenChange={setShowAbout} />
       <UpdateNotification />
       <LogsPanel logs={logs} onClear={clearLogs} />
     </div>
