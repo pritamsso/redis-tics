@@ -145,8 +145,8 @@ export function MonitorPanel({
           <CardContent>
             {commandStats.length > 0 ? (
               <div className="flex gap-4">
-                <div className="w-40 h-40">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="w-40 h-40 min-w-[160px] min-h-[160px]">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <PieChart>
                       <Pie
                         data={pieData}
@@ -193,8 +193,8 @@ export function MonitorPanel({
           </CardHeader>
           <CardContent>
             {topIps.length > 0 ? (
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-40 min-w-0 min-h-[160px]">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <BarChart data={topIps.slice(0, 5)} layout="vertical">
                     <XAxis type="number" hide />
                     <YAxis type="category" dataKey="ip" width={100} tick={{ fontSize: 11 }} />

@@ -51,6 +51,7 @@ export interface ClientInfo {
   addr: string;
   ip: string;
   port: string;
+  nodeEndpoint?: string;
   name?: string;
   age: number;
   idle: number;
@@ -386,6 +387,7 @@ export interface InvestigationSummary {
   primaryCount: number;
   replicaCount: number;
   connectedClients: number;
+  uniqueClientHosts: number;
   blockedClients: number;
   opsPerSec: number;
   usedMemory: number;
@@ -406,6 +408,7 @@ export interface NodeInvestigation {
   role: string;
   clusterFlags: string[];
   connectedClients: number;
+  uniqueClientHosts: number;
   blockedClients: number;
   maxClients: number;
   usedMemory: number;
@@ -430,6 +433,7 @@ export interface NodeInvestigation {
   totalOutputListItems: number;
   avgClientIdleSeconds: number;
   maxClientIdleSeconds: number;
+  clientHosts: string[];
   clientsByCommand: CommandClientInfo[];
   topClients: ClientInfo[];
   commandStats: CommandStat[];

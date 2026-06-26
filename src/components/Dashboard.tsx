@@ -183,15 +183,15 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
       });
     }
 
-    const clients = info.server?.connected_clients || 0;
-    if (clients > 1000) {
+    const clientConnections = info.server?.connected_clients || 0;
+    if (clientConnections > 1000) {
       issues.push({
-        id: "high-clients",
+        id: "high-connections",
         severity: "warning",
-        title: "High Client Connections",
-        description: `${clients} clients connected. This may impact performance.`,
+        title: "High Connection Count",
+        description: `${clientConnections} client connections. This may impact performance.`,
         metric: "connected_clients",
-        value: clients.toString(),
+        value: clientConnections.toString(),
         threshold: "> 1000",
         action: "Review client connections",
         navigateTo: "clients",
@@ -405,7 +405,7 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
               <Badge variant="outline" className="text-xs">active</Badge>
             </div>
             <div className="text-2xl font-bold">{connectedClients}</div>
-            <div className="text-xs text-muted-foreground">Connected Clients</div>
+            <div className="text-xs text-muted-foreground">Client Connections</div>
             {renderMiniChart(history.map(h => h.connectedClients), "rgb(168, 85, 247)")}
           </div>
 
@@ -500,8 +500,8 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
                   <Zap className="h-4 w-4 text-green-500" />
                   Operations Over Time
                 </h3>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-48 min-w-0 min-h-[192px]">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <AreaChart data={chartData}>
                       <defs>
                         <linearGradient id="opsGradient" x1="0" y1="0" x2="0" y2="1">
@@ -524,8 +524,8 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
                   <MemoryStick className="h-4 w-4 text-blue-500" />
                   Memory Usage Over Time
                 </h3>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-48 min-w-0 min-h-[192px]">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <AreaChart data={chartData.map(h => ({ ...h, memMB: h.usedMemory / (1024 * 1024) }))}>
                       <defs>
                         <linearGradient id="memGradient" x1="0" y1="0" x2="0" y2="1">
@@ -546,15 +546,15 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
               <div className="p-4 rounded-xl bg-card border">
                 <h3 className="font-semibold mb-3 flex items-center gap-2">
                   <Users className="h-4 w-4 text-purple-500" />
-                  Connected Clients Over Time
+                  Client Connections Over Time
                 </h3>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-48 min-w-0 min-h-[192px]">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <LineChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                       <XAxis dataKey="timestamp" tickFormatter={formatTime} tick={axisStyle} tickLine={false} axisLine={{ stroke: '#444' }} interval="preserveStartEnd" />
                       <YAxis tick={axisStyle} tickLine={false} axisLine={false} width={35} allowDecimals={false} />
-                      <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => formatTime(Number(v))} formatter={(value) => [`${Number(value)} clients`, 'Connected']} />
+                      <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => formatTime(Number(v))} formatter={(value) => [`${Number(value)} connections`, 'Connected']} />
                       <Line type="monotone" dataKey="connectedClients" stroke="#a855f7" strokeWidth={2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
@@ -566,8 +566,8 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
                   <Gauge className="h-4 w-4 text-orange-500" />
                   Cache Hit Rate Over Time
                 </h3>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-48 min-w-0 min-h-[192px]">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <AreaChart data={chartData}>
                       <defs>
                         <linearGradient id="hitGradient" x1="0" y1="0" x2="0" y2="1">
@@ -590,8 +590,8 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
                   <Layers className="h-4 w-4 text-cyan-500" />
                   Memory Fragmentation Ratio
                 </h3>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-48 min-w-0 min-h-[192px]">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <LineChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                       <XAxis dataKey="timestamp" tickFormatter={formatTime} tick={axisStyle} tickLine={false} axisLine={{ stroke: '#444' }} interval="preserveStartEnd" />
@@ -608,8 +608,8 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
                   <Key className="h-4 w-4 text-yellow-500" />
                   Total Keys Over Time
                 </h3>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-48 min-w-0 min-h-[192px]">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <AreaChart data={chartData}>
                       <defs>
                         <linearGradient id="keysGradient" x1="0" y1="0" x2="0" y2="1">
@@ -636,8 +636,8 @@ export function Dashboard({ serverName, info, onNavigate }: DashboardProps) {
               <Database className="h-4 w-4 text-indigo-500" />
               Keyspace Distribution
             </h3>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-48 min-w-0 min-h-[192px]">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <BarChart data={Object.entries(info.keyspace).map(([db, data]) => ({ db, keys: data.keys, expires: data.expires }))}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                   <XAxis dataKey="db" tick={{ fontSize: 10, fill: '#888' }} tickLine={false} axisLine={{ stroke: '#444' }} />

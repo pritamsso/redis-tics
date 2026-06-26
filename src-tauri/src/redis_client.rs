@@ -2,7 +2,7 @@ use crate::types::*;
 use redis::aio::MultiplexedConnection;
 use redis::Client;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
@@ -18,9 +18,14 @@ struct RedisConnection {
 }
 
 #[derive(Debug, Clone)]
-struct ClusterMaster {
+struct ClusterNodeEndpoint {
+    node_id: String,
     host: String,
     port: u16,
+    role: String,
+    flags: Vec<String>,
+    master_id: Option<String>,
+    slots: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +38,7 @@ struct SlotRange {
 struct ClusterRouting {
     slots: Vec<SlotRange>,
     connections: HashMap<String, MultiplexedConnection>,
+    nodes: HashMap<String, ClusterNodeEndpoint>,
 }
 
 pub struct RedisManager {
@@ -74,7 +80,9 @@ impl RedisManager {
             .await
             .map_err(|e| format!("Failed to connect: {}", e))?;
 
-        let cluster = if server.connection_mode == Some(RedisConnectionMode::Cluster) {
+        let cluster_requested = server.connection_mode == Some(RedisConnectionMode::Cluster);
+        let cluster_detected = cluster_requested || is_cluster_enabled(conn.clone()).await.unwrap_or(false);
+        let cluster = if cluster_detected {
             Some(self.discover_cluster(server, conn.clone()).await?)
         } else {
             None
@@ -103,26 +111,46 @@ impl RedisManager {
             .await
             .map_err(|e| format!("Connected to seed, but cluster discovery failed: {}", e))?;
 
-        let (masters, slots) = parse_cluster_slots(&slots_value, &server.host)?;
-        if masters.is_empty() || slots.is_empty() {
+        let (mut nodes, slots) = parse_cluster_slots(&slots_value, &server.host)?;
+        if nodes.values().filter(|node| node.role == "primary").count() == 0 || slots.is_empty() {
             return Err("Connected to seed, but no cluster primaries or slot ranges were discovered".to_string());
         }
 
+        let cluster_nodes = redis::cmd("CLUSTER")
+            .arg("NODES")
+            .query_async::<String>(&mut seed_conn)
+            .await
+            .map(|nodes| parse_cluster_nodes(&nodes))
+            .unwrap_or_default();
+        merge_cluster_nodes(&mut nodes, &cluster_nodes, &server.host);
+
         let mut connections = HashMap::new();
-        for (node_key, master) in &masters {
-            let url = build_redis_url(server, &master.host, master.port);
+        let cluster_server = RedisServer {
+            connection_mode: Some(RedisConnectionMode::Cluster),
+            ..server.clone()
+        };
+        for (node_key, node) in &nodes {
+            let url = build_redis_url(&cluster_server, &node.host, node.port);
             let client = Client::open(url.as_str())
                 .map_err(|e| format!("Failed to create cluster node client for {}: {}", node_key, e))?;
-            let conn = client
+            match client
                 .get_multiplexed_async_connection()
                 .await
-                .map_err(|e| format!("Failed to connect to cluster primary {}: {}", node_key, e))?;
-            connections.insert(node_key.clone(), conn);
+            {
+                Ok(conn) => {
+                    connections.insert(node_key.clone(), conn);
+                }
+                Err(e) if node.role == "primary" => {
+                    return Err(format!("Failed to connect to cluster primary {}: {}", node_key, e));
+                }
+                Err(_) => {}
+            }
         }
 
         Ok(ClusterRouting {
             slots,
             connections,
+            nodes,
         })
     }
 
@@ -174,6 +202,31 @@ impl RedisManager {
         let redis_conn = connections
             .get_mut(server_id)
             .ok_or("Server not connected")?;
+
+        if let Some(cluster) = redis_conn.cluster.as_mut() {
+            let mut all_clients = Vec::new();
+            let mut node_keys: Vec<String> = cluster.connections.keys().cloned().collect();
+            node_keys.sort();
+
+            for node_key in node_keys {
+                let Some(conn) = cluster.connections.get_mut(&node_key) else {
+                    continue;
+                };
+                let client_list: String = redis::cmd("CLIENT")
+                    .arg("LIST")
+                    .query_async(conn)
+                    .await
+                    .map_err(|e| format!("Failed to get client list from {}: {}", node_key, e))?;
+
+                for mut client in parse_client_list(&client_list) {
+                    client.node_endpoint = Some(node_key.clone());
+                    client.id = format!("{}:{}", node_key, client.id);
+                    all_clients.push(client);
+                }
+            }
+
+            return Ok(all_clients);
+        }
 
         let client_list: String = redis::cmd("CLIENT")
             .arg("LIST")
@@ -341,6 +394,22 @@ impl RedisManager {
     pub async fn get_cluster_nodes(&self, server_id: &str) -> Result<Vec<ClusterNode>, String> {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
+
+        if let Some(cluster) = redis_conn.cluster.as_ref() {
+            let mut nodes: Vec<ClusterNode> = cluster
+                .nodes
+                .values()
+                .map(cluster_endpoint_to_node)
+                .collect();
+            nodes.sort_by(|a, b| {
+                let role_a = cluster_node_role_rank(&a.flags);
+                let role_b = cluster_node_role_rank(&b.flags);
+                role_a.cmp(&role_b).then_with(|| a.addr.cmp(&b.addr))
+            });
+            if !nodes.is_empty() {
+                return Ok(nodes);
+            }
+        }
 
         let nodes_str: String = redis::cmd("CLUSTER")
             .arg("NODES")
@@ -1302,29 +1371,36 @@ impl RedisManager {
         let mut connections = self.connections.write().await;
         let redis_conn = connections.get_mut(server_id).ok_or("Server not connected")?;
 
-        let cluster_nodes = if redis_conn.cluster.is_some() {
-            redis::cmd("CLUSTER")
-                .arg("NODES")
-                .query_async::<String>(&mut redis_conn.conn)
-                .await
-                .map(|nodes| parse_cluster_nodes(&nodes))
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-
         let mut nodes = Vec::new();
+        let mut cluster_nodes = Vec::new();
         if let Some(cluster) = redis_conn.cluster.as_mut() {
-            let mut node_keys: Vec<String> = cluster.connections.keys().cloned().collect();
+            cluster_nodes = cluster
+                .nodes
+                .values()
+                .map(cluster_endpoint_to_node)
+                .collect();
+            cluster_nodes.sort_by(|a, b| {
+                let role_a = cluster_node_role_rank(&a.flags);
+                let role_b = cluster_node_role_rank(&b.flags);
+                role_a.cmp(&role_b).then_with(|| a.addr.cmp(&b.addr))
+            });
+
+            let mut node_keys: Vec<String> = cluster.nodes.keys().cloned().collect();
             node_keys.sort();
             for node_key in node_keys {
+                let Some(endpoint) = cluster.nodes.get(&node_key).cloned() else {
+                    continue;
+                };
+                let flags = endpoint.flags.clone();
+                let node_id = if endpoint.node_id.is_empty() {
+                    node_key.clone()
+                } else {
+                    endpoint.node_id.clone()
+                };
                 if let Some(conn) = cluster.connections.get_mut(&node_key) {
-                    let flags = cluster_nodes
-                        .iter()
-                        .find(|node| normalize_cluster_addr(&node.addr) == node_key)
-                        .map(|node| node.flags.split(',').map(|flag| flag.to_string()).collect())
-                        .unwrap_or_default();
-                    nodes.push(collect_node_investigation(&node_key, &node_key, flags, conn).await);
+                    nodes.push(collect_node_investigation(&node_id, &node_key, flags, conn).await);
+                } else {
+                    nodes.push(unavailable_node_investigation(&node_id, &node_key, &endpoint));
                 }
             }
         } else {
@@ -1377,6 +1453,15 @@ impl RedisManager {
     }
 }
 
+async fn is_cluster_enabled(mut conn: MultiplexedConnection) -> Result<bool, String> {
+    let info_str: String = redis::cmd("INFO")
+        .arg("cluster")
+        .query_async(&mut conn)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(info_str.contains("cluster_enabled:1"))
+}
+
 fn build_redis_url(server: &RedisServer, host: &str, port: u16) -> String {
     let scheme = if server.tls.unwrap_or(false) { "rediss" } else { "redis" };
     let db = if server.connection_mode == Some(RedisConnectionMode::Cluster) {
@@ -1418,12 +1503,12 @@ fn build_redis_url(server: &RedisServer, host: &str, port: u16) -> String {
 fn parse_cluster_slots(
     value: &redis::Value,
     seed_host: &str,
-) -> Result<(HashMap<String, ClusterMaster>, Vec<SlotRange>), String> {
+) -> Result<(HashMap<String, ClusterNodeEndpoint>, Vec<SlotRange>), String> {
     let redis::Value::Array(slot_rows) = value else {
         return Err("CLUSTER SLOTS returned an unexpected response".to_string());
     };
 
-    let mut masters = HashMap::new();
+    let mut nodes = HashMap::new();
     let mut slots = Vec::new();
 
     for row in slot_rows {
@@ -1436,29 +1521,107 @@ fn parse_cluster_slots(
 
         let start = value_as_u16(&items[0]).ok_or("CLUSTER SLOTS included an invalid start slot")?;
         let end = value_as_u16(&items[1]).ok_or("CLUSTER SLOTS included an invalid end slot")?;
-        let redis::Value::Array(master_items) = &items[2] else {
+        let Some((primary_key, primary)) = parse_cluster_slot_node(&items[2], seed_host, "primary", None, Vec::new()) else {
             continue;
         };
-        if master_items.len() < 2 {
-            continue;
-        }
-
-        let mut host = value_as_string(&master_items[0]).unwrap_or_default();
-        if host.is_empty() {
-            host = seed_host.to_string();
-        }
-
-        let port = value_as_u16(&master_items[1]).ok_or("CLUSTER SLOTS included an invalid primary port")?;
-        let node_key = format!("{}:{}", host, port);
-        masters.entry(node_key.clone()).or_insert(ClusterMaster { host, port });
+        let primary_id = if primary.node_id.is_empty() { None } else { Some(primary.node_id.clone()) };
+        nodes.entry(primary_key.clone()).or_insert(primary);
         slots.push(SlotRange {
             start,
             end,
-            node_key,
+            node_key: primary_key,
         });
+
+        for replica_value in items.iter().skip(3) {
+            if let Some((replica_key, replica)) = parse_cluster_slot_node(
+                replica_value,
+                seed_host,
+                "replica",
+                primary_id.clone(),
+                Vec::new(),
+            ) {
+                nodes.entry(replica_key).or_insert(replica);
+            }
+        }
     }
 
-    Ok((masters, slots))
+    Ok((nodes, slots))
+}
+
+fn parse_cluster_slot_node(
+    value: &redis::Value,
+    seed_host: &str,
+    role: &str,
+    master_id: Option<String>,
+    slots: Vec<String>,
+) -> Option<(String, ClusterNodeEndpoint)> {
+    let redis::Value::Array(items) = value else {
+        return None;
+    };
+    if items.len() < 2 {
+        return None;
+    }
+
+    let mut host = value_as_string(&items[0]).unwrap_or_default();
+    if host.is_empty() {
+        host = seed_host.to_string();
+    }
+    let port = value_as_u16(&items[1])?;
+    let node_id = items.get(2).and_then(value_as_string).unwrap_or_default();
+    let node_key = format!("{}:{}", host, port);
+
+    Some((
+        node_key,
+        ClusterNodeEndpoint {
+            node_id,
+            host,
+            port,
+            role: role.to_string(),
+            flags: vec![role.to_string()],
+            master_id,
+            slots,
+        },
+    ))
+}
+
+fn merge_cluster_nodes(
+    endpoints: &mut HashMap<String, ClusterNodeEndpoint>,
+    cluster_nodes: &[ClusterNode],
+    seed_host: &str,
+) {
+    for node in cluster_nodes {
+        let Some((host, port)) = parse_cluster_addr(&node.addr, seed_host) else {
+            continue;
+        };
+        let node_key = format!("{}:{}", host, port);
+        let flags: Vec<String> = node.flags.split(',').map(|flag| flag.to_string()).collect();
+        let role = if flags.iter().any(|flag| flag == "master") {
+            "primary"
+        } else if flags.iter().any(|flag| flag == "slave") {
+            "replica"
+        } else {
+            "unknown"
+        };
+
+        endpoints
+            .entry(node_key)
+            .and_modify(|endpoint| {
+                endpoint.node_id = node.id.clone();
+                endpoint.role = role.to_string();
+                endpoint.flags = flags.clone();
+                endpoint.master_id = node.master_id.clone();
+                endpoint.slots = node.slots.clone();
+            })
+            .or_insert_with(|| ClusterNodeEndpoint {
+                node_id: node.id.clone(),
+                host,
+                port,
+                role: role.to_string(),
+                flags,
+                master_id: node.master_id.clone(),
+                slots: node.slots.clone(),
+            });
+    }
 }
 
 async fn scan_cluster_keys(
@@ -1468,7 +1631,17 @@ async fn scan_cluster_keys(
     count: u32,
 ) -> Result<KeyScanResult, String> {
     let cluster = redis_conn.cluster.as_mut().ok_or("Server is not connected in cluster mode")?;
-    let mut node_keys: Vec<String> = cluster.connections.keys().cloned().collect();
+    let mut node_keys: Vec<String> = cluster
+        .nodes
+        .iter()
+        .filter_map(|(node_key, node)| {
+            if node.role == "primary" && cluster.connections.contains_key(node_key) {
+                Some(node_key.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
     node_keys.sort();
 
     if node_keys.is_empty() {
@@ -1713,7 +1886,9 @@ async fn collect_node_investigation(
     let mut total_output_list_items = 0;
     let mut max_idle = 0;
     let mut total_idle = 0;
+    let mut unique_client_hosts = HashSet::new();
     for client in &clients {
+        unique_client_hosts.insert(client.ip.clone());
         command_clients
             .entry(if client.cmd.is_empty() { "NULL".to_string() } else { client.cmd.clone() })
             .or_default()
@@ -1773,6 +1948,9 @@ async fn collect_node_investigation(
         notes.push("Connections have been rejected".to_string());
     }
 
+    let mut client_hosts: Vec<String> = unique_client_hosts.iter().cloned().collect();
+    client_hosts.sort();
+
     NodeInvestigation {
         node_id: node_id.to_string(),
         endpoint: endpoint.to_string(),
@@ -1782,6 +1960,7 @@ async fn collect_node_investigation(
             .unwrap_or_else(|| if cluster_flags.iter().any(|flag| flag == "slave") { "replica".to_string() } else { "master".to_string() }),
         cluster_flags,
         connected_clients,
+        unique_client_hosts: unique_client_hosts.len() as u64,
         blocked_clients,
         max_clients,
         used_memory,
@@ -1806,6 +1985,7 @@ async fn collect_node_investigation(
         total_output_list_items,
         avg_client_idle_seconds: if clients.is_empty() { 0.0 } else { total_idle as f64 / clients.len() as f64 },
         max_client_idle_seconds: max_idle,
+        client_hosts,
         clients_by_command,
         top_clients,
         command_stats,
@@ -1816,11 +1996,63 @@ async fn collect_node_investigation(
     }
 }
 
+fn unavailable_node_investigation(
+    node_id: &str,
+    endpoint: &str,
+    cluster_node: &ClusterNodeEndpoint,
+) -> NodeInvestigation {
+    NodeInvestigation {
+        node_id: node_id.to_string(),
+        endpoint: endpoint.to_string(),
+        role: cluster_node.role.clone(),
+        cluster_flags: cluster_node.flags.clone(),
+        connected_clients: 0,
+        unique_client_hosts: 0,
+        blocked_clients: 0,
+        max_clients: 0,
+        used_memory: 0,
+        used_memory_human: String::new(),
+        max_memory: 0,
+        max_memory_policy: String::new(),
+        mem_fragmentation_ratio: 0.0,
+        ops_per_sec: 0,
+        instantaneous_input_kbps: 0.0,
+        instantaneous_output_kbps: 0.0,
+        hit_rate: 0.0,
+        total_commands_processed: 0,
+        rejected_connections: 0,
+        evicted_keys: 0,
+        expired_keys: 0,
+        connected_replicas: 0,
+        replication_lag_seconds: None,
+        client_recent_max_input_buffer: 0,
+        client_recent_max_output_buffer: 0,
+        total_query_buffer_bytes: 0,
+        total_output_buffer_bytes: 0,
+        total_output_list_items: 0,
+        avg_client_idle_seconds: 0.0,
+        max_client_idle_seconds: 0,
+        client_hosts: Vec::new(),
+        clients_by_command: Vec::new(),
+        top_clients: Vec::new(),
+        command_stats: Vec::new(),
+        slow_log: Vec::new(),
+        latency_events: Vec::new(),
+        error_stats: Vec::new(),
+        notes: vec!["Metrics unavailable for this node".to_string()],
+    }
+}
+
 fn build_investigation_summary(nodes: &[NodeInvestigation]) -> InvestigationSummary {
     let node_count = nodes.len() as u64;
     let primary_count = nodes.iter().filter(|node| node.role == "master" || node.role == "primary").count() as u64;
     let replica_count = nodes.iter().filter(|node| node.role == "slave" || node.role == "replica").count() as u64;
     let connected_clients = nodes.iter().map(|node| node.connected_clients).sum();
+    let unique_client_hosts = nodes
+        .iter()
+        .flat_map(|node| node.client_hosts.iter().cloned())
+        .collect::<HashSet<_>>()
+        .len() as u64;
     let blocked_clients = nodes.iter().map(|node| node.blocked_clients).sum();
     let ops_per_sec = nodes.iter().map(|node| node.ops_per_sec).sum();
     let used_memory = nodes.iter().map(|node| node.used_memory).sum();
@@ -1866,6 +2098,7 @@ fn build_investigation_summary(nodes: &[NodeInvestigation]) -> InvestigationSumm
         primary_count,
         replica_count,
         connected_clients,
+        unique_client_hosts,
         blocked_clients,
         ops_per_sec,
         used_memory,
@@ -1996,6 +2229,51 @@ fn map_f64(map: &HashMap<String, String>, key: &str) -> f64 {
 
 fn normalize_cluster_addr(addr: &str) -> String {
     addr.split('@').next().unwrap_or(addr).to_string()
+}
+
+fn parse_cluster_addr(addr: &str, fallback_host: &str) -> Option<(String, u16)> {
+    let endpoint = normalize_cluster_addr(addr);
+    if endpoint.is_empty() {
+        return None;
+    }
+
+    if let Some(rest) = endpoint.strip_prefix('[') {
+        let (host, port_part) = rest.split_once("]:")?;
+        return Some((host.to_string(), port_part.parse().ok()?));
+    }
+
+    let (host, port_part) = endpoint.rsplit_once(':')?;
+    let host = if host.is_empty() { fallback_host } else { host };
+    Some((host.to_string(), port_part.parse().ok()?))
+}
+
+fn cluster_endpoint_to_node(endpoint: &ClusterNodeEndpoint) -> ClusterNode {
+    let flags = if endpoint.flags.is_empty() {
+        endpoint.role.clone()
+    } else {
+        endpoint.flags.join(",")
+    };
+    ClusterNode {
+        id: endpoint.node_id.clone(),
+        addr: format!("{}:{}", endpoint.host, endpoint.port),
+        flags,
+        master_id: endpoint.master_id.clone(),
+        ping_sent: 0,
+        pong_recv: 0,
+        config_epoch: 0,
+        link_state: "connected".to_string(),
+        slots: endpoint.slots.clone(),
+    }
+}
+
+fn cluster_node_role_rank(flags: &str) -> u8 {
+    if flags.split(',').any(|flag| flag == "master" || flag == "primary") {
+        0
+    } else if flags.split(',').any(|flag| flag == "slave" || flag == "replica") {
+        1
+    } else {
+        2
+    }
 }
 
 fn parse_latency_latest(value: &redis::Value) -> Vec<LatencyEvent> {
@@ -2195,6 +2473,7 @@ fn parse_client_list(list: &str) -> Vec<ClientInfo> {
                 addr: addr.clone(),
                 ip: ip.to_string(),
                 port: port.to_string(),
+                node_endpoint: None,
                 name: map.get("name").filter(|n| !n.is_empty()).map(|s| s.to_string()),
                 age: map.get("age").and_then(|v| v.parse().ok()).unwrap_or(0),
                 idle: map.get("idle").and_then(|v| v.parse().ok()).unwrap_or(0),

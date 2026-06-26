@@ -364,6 +364,28 @@ jobs:
           ' release-files/latest.json
           echo "Generated latest.json for auto-updater"
 
+      - name: Verify updater signatures
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+
+          jq -r '.plugins.updater.pubkey' src-tauri/tauri.conf.json | base64 -d > /tmp/redis-tics-updater.pub
+
+          verify_signature() {
+            local file="$1"
+            local sig="${file}.sig"
+
+            echo "Verifying ${file}"
+            minisign -Vm "${file}" -x "${sig}" -p /tmp/redis-tics-updater.pub
+          }
+
+          VERSION="${{ steps.get_version.outputs.version }}"
+          verify_signature "release-files/Redis.Tics_${VERSION}_aarch64.app.tar.gz"
+          verify_signature "release-files/Redis.Tics_${VERSION}_x64.app.tar.gz"
+          verify_signature "release-files/Redis.Tics_${VERSION}_amd64.AppImage"
+          verify_signature "release-files/Redis.Tics_${VERSION}_x64-setup.msi"
+
       - name: Generate changelog
         id: changelog
         shell: bash

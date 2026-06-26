@@ -51,7 +51,7 @@ export function ClientsPanel({ clients, onSelectIp }: ClientsPanelProps) {
   if (!clients || clients.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
-        No connected clients
+        No client connections
       </div>
     );
   }
@@ -61,7 +61,7 @@ export function ClientsPanel({ clients, onSelectIp }: ClientsPanelProps) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Clients</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Connections</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -71,7 +71,7 @@ export function ClientsPanel({ clients, onSelectIp }: ClientsPanelProps) {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Unique IPs</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Client Hosts</CardTitle>
             <Globe className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -99,7 +99,7 @@ export function ClientsPanel({ clients, onSelectIp }: ClientsPanelProps) {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2">
               <Globe className="h-5 w-5" />
-              Top IPs by Connection Count
+              Client Hosts by Connection Count
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 min-h-0">
@@ -135,7 +135,7 @@ export function ClientsPanel({ clients, onSelectIp }: ClientsPanelProps) {
             <CardTitle className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                Connected Clients
+                Client Connections
               </div>
               <Badge variant="outline" className="font-normal">
                 {filteredClients.length}{search ? ` / ${clients.length}` : ""}
@@ -171,6 +171,11 @@ export function ClientsPanel({ clients, onSelectIp }: ClientsPanelProps) {
                       </div>
                       <Badge variant="outline" className="ml-2 flex-shrink-0">db{client.db}</Badge>
                     </div>
+                    {client.nodeEndpoint && (
+                      <div className="mb-2 text-xs text-muted-foreground">
+                        Node <span className="font-mono">{client.nodeEndpoint}</span>
+                      </div>
+                    )}
                     <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
                       <div className="flex items-center gap-1">
                         <Clock className="h-3 w-3" />
@@ -189,7 +194,7 @@ export function ClientsPanel({ clients, onSelectIp }: ClientsPanelProps) {
                 ))}
                 {filteredClients.length === 0 && (
                   <div className="text-center text-muted-foreground py-8 text-sm">
-                    No clients matching "{search}"
+                    No connections matching "{search}"
                   </div>
                 )}
               </div>

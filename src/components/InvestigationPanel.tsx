@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AlertTriangle, Activity, Clock, Database, Gauge, Network, RefreshCw, Server, Terminal, Users, Zap } from "lucide-react";
+import { AlertTriangle, Activity, Clock, Database, Gauge, Network, RefreshCw, Server, Terminal, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,26 @@ function roleLabel(role: string) {
   if (role === "master") return "primary";
   if (role === "slave") return "replica";
   return role || "unknown";
+}
+
+function flagLabel(flag: string) {
+  if (flag === "master") return "primary";
+  if (flag === "slave") return "replica";
+  return flag;
+}
+
+function isPrimary(flags: string, role?: string) {
+  return role === "primary" || role === "master" || flags.split(",").some((flag) => flag === "master" || flag === "primary");
+}
+
+function shortId(id: string) {
+  return id ? `${id.slice(0, 12)}${id.length > 12 ? "..." : ""}` : "unknown";
+}
+
+function slotSummary(slots: string[]) {
+  if (slots.length === 0) return "no slots";
+  if (slots.length <= 2) return slots.join(", ");
+  return `${slots.slice(0, 2).join(", ")} +${slots.length - 2}`;
 }
 
 function findingVariant(level: string) {
@@ -109,13 +129,14 @@ function NodeCard({ node }: { node: NodeInvestigation }) {
           </div>
           <div>
             <div className="mb-1 flex justify-between text-muted-foreground">
-              <span>Clients</span>
+              <span>Connections</span>
               <span>{node.maxClients > 0 ? `${clientPct.toFixed(0)}%` : "n/a"}</span>
             </div>
             <Bar value={clientPct} tone={clientPct > 80 ? "bg-yellow-500" : "bg-primary"} />
             <div className="mt-1 text-xs text-muted-foreground">
               {node.connectedClients}
-              {node.maxClients > 0 ? ` / ${node.maxClients}` : ""} connected
+              {node.maxClients > 0 ? ` / ${node.maxClients}` : ""} connections
+              {node.uniqueClientHosts > 0 ? ` · ${node.uniqueClientHosts} hosts` : ""}
             </div>
           </div>
         </div>
@@ -151,7 +172,7 @@ function NodeCard({ node }: { node: NodeInvestigation }) {
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
               <Terminal className="h-4 w-4" />
-              Client Commands
+              Connections by Last Command
             </div>
             <div className="space-y-2">
               {topCommands.length > 0 ? topCommands.map((cmd) => (
@@ -160,14 +181,14 @@ function NodeCard({ node }: { node: NodeInvestigation }) {
                   <Bar value={(cmd.clientCount / Math.max(1, node.connectedClients)) * 100} />
                   <span className="w-10 text-right text-muted-foreground">{cmd.clientCount}</span>
                 </div>
-              )) : <div className="text-sm text-muted-foreground">No clients reporting commands</div>}
+              )) : <div className="text-sm text-muted-foreground">No connections reporting commands</div>}
             </div>
           </div>
 
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
               <Users className="h-4 w-4" />
-              Clients to Inspect
+              Connections to Inspect
             </div>
             <div className="space-y-2 max-h-48 overflow-auto">
               {node.topClients.slice(0, 8).map((client) => (
@@ -182,9 +203,75 @@ function NodeCard({ node }: { node: NodeInvestigation }) {
                   </div>
                 </div>
               ))}
-              {node.topClients.length === 0 && <div className="text-sm text-muted-foreground">No connected clients</div>}
+              {node.topClients.length === 0 && <div className="text-sm text-muted-foreground">No client connections</div>}
             </div>
           </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function NodeLoadOverview({ nodes, selectedNodeId, onSelectNode }: { nodes: NodeInvestigation[]; selectedNodeId: string | null; onSelectNode: (nodeId: string) => void }) {
+  const maxOps = Math.max(1, ...nodes.map((node) => node.opsPerSec));
+  const maxConnections = Math.max(1, ...nodes.map((node) => node.connectedClients));
+  const totalMemory = nodes.reduce((sum, node) => sum + node.usedMemory, 0);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Gauge className="h-4 w-4" />
+          Node Load
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3">
+          {nodes.map((node) => {
+            const active = node.nodeId === selectedNodeId;
+            const memoryShare = totalMemory > 0 ? (node.usedMemory / totalMemory) * 100 : 0;
+            return (
+              <button
+                key={node.nodeId}
+                type="button"
+                onClick={() => onSelectNode(node.nodeId)}
+                className={`rounded-md border p-3 text-left transition-colors ${active ? "border-primary bg-primary/10" : "bg-secondary/30 hover:bg-secondary/60"}`}
+              >
+                <div className="mb-3 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate font-mono text-sm">{node.endpoint}</div>
+                    <div className="text-xs text-muted-foreground">{roleLabel(node.role)}</div>
+                  </div>
+                  <Badge variant={node.role === "primary" || node.role === "master" ? "default" : "secondary"}>
+                    {formatNumber(node.opsPerSec)} ops/s
+                  </Badge>
+                </div>
+                <div className="space-y-2 text-xs">
+                  <div>
+                    <div className="mb-1 flex justify-between text-muted-foreground">
+                      <span>Ops load</span>
+                      <span>{Math.round((node.opsPerSec / maxOps) * 100)}%</span>
+                    </div>
+                    <Bar value={(node.opsPerSec / maxOps) * 100} />
+                  </div>
+                  <div>
+                    <div className="mb-1 flex justify-between text-muted-foreground">
+                      <span>Connections</span>
+                      <span>{node.connectedClients}</span>
+                    </div>
+                    <Bar value={(node.connectedClients / maxConnections) * 100} tone="bg-sky-500" />
+                  </div>
+                  <div>
+                    <div className="mb-1 flex justify-between text-muted-foreground">
+                      <span>Memory share</span>
+                      <span>{memoryShare.toFixed(0)}%</span>
+                    </div>
+                    <Bar value={memoryShare} tone="bg-emerald-500" />
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </CardContent>
     </Card>
@@ -195,6 +282,7 @@ export function InvestigationPanel({ serverId }: InvestigationPanelProps) {
   const [data, setData] = useState<RedisInvestigation | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeView, setActiveView] = useState<"nodes" | "commands" | "latency">("nodes");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -209,6 +297,16 @@ export function InvestigationPanel({ serverId }: InvestigationPanelProps) {
     load();
   }, [serverId]);
 
+  useEffect(() => {
+    if (!data?.nodes.length) {
+      setSelectedNodeId(null);
+      return;
+    }
+    if (!selectedNodeId || !data.nodes.some((node) => node.nodeId === selectedNodeId)) {
+      setSelectedNodeId(data.nodes[0].nodeId);
+    }
+  }, [data, selectedNodeId]);
+
   const slowCommands = useMemo(() => {
     return (data?.nodes || [])
       .flatMap((node) => node.commandStats.map((cmd) => ({ ...cmd, node: node.endpoint })))
@@ -221,6 +319,13 @@ export function InvestigationPanel({ serverId }: InvestigationPanelProps) {
       .flatMap((node) => node.latencyEvents.map((event) => ({ ...event, node: node.endpoint })))
       .sort((a, b) => b.maxMs - a.maxMs);
   }, [data]);
+
+  const selectedNode = useMemo(() => {
+    if (!data?.nodes.length) return null;
+    return data.nodes.find((node) => node.nodeId === selectedNodeId) || data.nodes[0];
+  }, [data, selectedNodeId]);
+
+  const nodesById = useMemo(() => new Map((data?.nodes || []).map((node) => [node.nodeId, node])), [data]);
 
   if (loading && !data) {
     return (
@@ -268,10 +373,10 @@ export function InvestigationPanel({ serverId }: InvestigationPanelProps) {
       <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <Metric label="Pressure" value={`${data.summary.pressureScore} ${pressureLabel(data.summary.pressureScore)}`} icon={Gauge} />
         <Metric label="Nodes" value={`${data.summary.nodeCount}`} icon={Server} />
-        <Metric label="Clients" value={formatNumber(data.summary.connectedClients)} icon={Users} />
+        <Metric label="Connections" value={formatNumber(data.summary.connectedClients)} icon={Users} />
+        <Metric label="Client Hosts" value={formatNumber(data.summary.uniqueClientHosts)} icon={Network} />
         <Metric label="Ops/Sec" value={formatNumber(data.summary.opsPerSec)} icon={Activity} />
         <Metric label="Memory" value={formatBytes(data.summary.usedMemory)} icon={Database} />
-        <Metric label="Hit Rate" value={pct(data.summary.hitRate)} icon={Zap} />
       </div>
 
       {data.findings.length > 0 && (
@@ -299,8 +404,80 @@ export function InvestigationPanel({ serverId }: InvestigationPanelProps) {
       )}
 
       {activeView === "nodes" && (
-        <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4">
-          {data.nodes.map((node) => <NodeCard key={node.nodeId} node={node} />)}
+        <div className="space-y-4">
+          <NodeLoadOverview nodes={data.nodes} selectedNodeId={selectedNode?.nodeId || selectedNodeId} onSelectNode={setSelectedNodeId} />
+          <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Network className="h-4 w-4" />
+                  Topology
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[640px] pr-3">
+                  <div className="space-y-2">
+                    {(data.clusterNodes.length > 0 ? data.clusterNodes : data.nodes.map((node) => ({
+                      id: node.nodeId,
+                      addr: node.endpoint,
+                      flags: node.role,
+                      masterId: undefined,
+                      pingSent: 0,
+                      pongRecv: 0,
+                      configEpoch: 0,
+                      linkState: "connected",
+                      slots: [],
+                    }))).map((clusterNode) => {
+                      const liveNode = nodesById.get(clusterNode.id) || data.nodes.find((node) => node.endpoint === clusterNode.addr);
+                      const active = liveNode?.nodeId === selectedNode?.nodeId;
+                      const primary = isPrimary(clusterNode.flags, liveNode?.role);
+                      return (
+                        <button
+                          key={`${clusterNode.id}-${clusterNode.addr}`}
+                          type="button"
+                          onClick={() => liveNode && setSelectedNodeId(liveNode.nodeId)}
+                          className={`w-full rounded-md border p-3 text-left transition-colors ${active ? "border-primary bg-primary/10" : "bg-secondary/30 hover:bg-secondary/60"}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate font-mono text-sm">{clusterNode.addr}</div>
+                              <div className="mt-1 text-xs text-muted-foreground">{shortId(clusterNode.id)}</div>
+                            </div>
+                            <Badge variant={primary ? "default" : "secondary"} className="shrink-0">
+                              {primary ? "primary" : "replica"}
+                            </Badge>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {clusterNode.flags.split(",").filter(Boolean).map((flag) => (
+                              <Badge key={flag} variant="outline" className="text-[10px]">
+                                {flagLabel(flag)}
+                              </Badge>
+                            ))}
+                          </div>
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            {primary ? slotSummary(clusterNode.slots) : `primary ${shortId(clusterNode.masterId || "")}`}
+                          </div>
+                          {liveNode?.notes.some((note) => note.includes("unavailable")) && (
+                            <div className="mt-2 text-xs text-yellow-600">Metrics unavailable</div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            {selectedNode ? (
+              <NodeCard node={selectedNode} />
+            ) : (
+              <Card>
+                <CardContent className="flex h-64 items-center justify-center text-muted-foreground">
+                  No nodes discovered
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
       )}
 

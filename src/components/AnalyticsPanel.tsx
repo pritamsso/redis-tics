@@ -271,8 +271,8 @@ export function AnalyticsPanel({ serverId }: AnalyticsPanelProps) {
               </CardHeader>
               <CardContent>
                 {topCommands.length > 0 ? (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="h-64 min-w-0 min-h-[256px]">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                       <BarChart data={topCommands} layout="vertical">
                         <XAxis type="number" hide />
                         <YAxis type="category" dataKey="command" width={80} tick={{ fontSize: 11 }} />
@@ -295,8 +295,8 @@ export function AnalyticsPanel({ serverId }: AnalyticsPanelProps) {
               </CardHeader>
               <CardContent>
                 {slowestCommands.length > 0 ? (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="h-64 min-w-0 min-h-[256px]">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                       <BarChart data={slowestCommands} layout="vertical">
                         <XAxis type="number" hide />
                         <YAxis type="category" dataKey="command" width={80} tick={{ fontSize: 11 }} />
@@ -318,7 +318,7 @@ export function AnalyticsPanel({ serverId }: AnalyticsPanelProps) {
                 <CardTitle>Command Statistics</CardTitle>
               </CardHeader>
               <CardContent>
-                <ScrollArea className="h-64">
+                <ScrollArea className="h-64 min-w-0 min-h-[256px]">
                   <table className="w-full text-sm">
                     <thead className="border-b">
                       <tr>
@@ -570,7 +570,7 @@ export function AnalyticsPanel({ serverId }: AnalyticsPanelProps) {
                     <CardTitle>Cluster Nodes</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ScrollArea className="h-64">
+                    <ScrollArea className="h-64 min-w-0 min-h-[256px]">
                       <div className="space-y-2">
                         {analytics.clusterNodes.map((node) => (
                           <div key={node.id} className="p-3 bg-secondary rounded-lg">
@@ -578,7 +578,7 @@ export function AnalyticsPanel({ serverId }: AnalyticsPanelProps) {
                               <span className="font-mono text-sm">{node.addr}</span>
                               <div className="flex gap-1">
                                 {node.flags.split(",").map((flag) => (
-                                  <Badge key={flag} variant={flag.includes("master") ? "default" : "secondary"} className="text-xs">
+                                  <Badge key={flag} variant={flag === "master" || flag === "primary" ? "default" : "secondary"} className="text-xs">
                                     {flag === "master" ? "primary" : flag === "slave" ? "replica" : flag}
                                   </Badge>
                                 ))}

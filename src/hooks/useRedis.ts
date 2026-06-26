@@ -307,9 +307,9 @@ export function useRedis() {
     try {
       const clientList = await invoke<ClientInfo[]>("get_client_list", { serverId });
       setClients((prev) => ({ ...prev, [serverId]: clientList }));
-      addLog("debug", "clients", `Refreshed client list (${clientList.length} clients)`, undefined, serverId);
+      addLog("debug", "clients", `Refreshed client connection list (${clientList.length} connections)`, undefined, serverId);
     } catch (error) {
-      addLog("warn", "clients", "Failed to refresh client list", error, serverId);
+      addLog("warn", "clients", "Failed to refresh client connection list", error, serverId);
     }
   }, [addLog]);
 

@@ -338,14 +338,14 @@ export function DatabaseAnalytics({ serverId }: DatabaseAnalyticsProps) {
               <div className="p-4 rounded-lg bg-secondary/50 border">
                 <div className="flex items-center gap-2 text-muted-foreground mb-2">
                   <Users className="h-4 w-4" />
-                  <span className="text-sm">Total Clients</span>
+                  <span className="text-sm">Connections</span>
                 </div>
                 <div className="text-2xl font-bold">{clientAnalysis.totalClients}</div>
               </div>
               <div className="p-4 rounded-lg bg-secondary/50 border">
                 <div className="flex items-center gap-2 text-muted-foreground mb-2">
                   <Clock className="h-4 w-4" />
-                  <span className="text-sm">Idle Clients</span>
+                  <span className="text-sm">Idle Connections</span>
                 </div>
                 <div className="text-2xl font-bold text-yellow-500">
                   {clientAnalysis.idleClients.length}
@@ -410,7 +410,7 @@ export function DatabaseAnalytics({ serverId }: DatabaseAnalyticsProps) {
               <div className="space-y-3">
                 <h3 className="font-semibold flex items-center gap-2">
                   <Clock className="h-4 w-4" />
-                  Idle Clients ({">"} 5 min)
+                  Idle Connections ({">"} 5 min)
                 </h3>
                 <div className="space-y-1 max-h-64 overflow-auto">
                   {clientAnalysis.idleClients.map((client) => (
@@ -437,7 +437,7 @@ export function DatabaseAnalytics({ serverId }: DatabaseAnalyticsProps) {
             <div className="space-y-3">
               <h3 className="font-semibold flex items-center gap-2">
                 <Activity className="h-4 w-4" />
-                Clients by Last Command
+                Connections by Last Command
               </h3>
               <div className="grid grid-cols-3 gap-2">
                 {clientAnalysis.clientsByCommand.slice(0, 12).map((cmd) => (
