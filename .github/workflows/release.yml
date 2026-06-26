@@ -582,8 +582,10 @@ jobs:
           LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -n "$LAST_TAG" ]; then
             echo "📝 Getting changes since ${LAST_TAG}"
+            # grep exits 1 when no lines match (all commits are chore/bot commits).
+            # Wrapping in { ... || true; } keeps pipefail from killing the step.
             CHANGES_JSON=$(git log "${LAST_TAG}..HEAD" --pretty=format:"%s" --no-merges \
-              | grep -v "^chore: " \
+              | { grep -v "^chore: " || true; } \
               | head -15 \
               | jq -R . | jq -s -c .)
           else
